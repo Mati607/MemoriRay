@@ -1,0 +1,7 @@
+streamlit>=1.37.0
+sentence-transformers>=3.0.0
+faiss-cpu>=1.7.4
+pillow>=10.3.0
+ollama>=0.3.0
+numpy>=1.26.4
+torch>=2.2.0
