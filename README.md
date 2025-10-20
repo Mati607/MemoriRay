@@ -9,7 +9,7 @@ A minimal, fully local prototype for a supportive mental health companion:
 - Frontend: Streamlit
 - Embeddings: `sentence-transformers` (`all-MiniLM-L6-v2`)
 - Vector search: FAISS (persisted to `data/`)
-- LLM: [Ollama](https://ollama.com) (optional). Works without it using a minimal fallback.
+- LLM: [Ollama](https://ollama.com) (optional).
 
 ## Setup
 1) Python 3.10+
