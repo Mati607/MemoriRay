@@ -1,0 +1,114 @@
+# ==============================================
+# MindSync Conda Environment Configuration
+# Environment name: memray
+# ==============================================
+
+name: memray
+
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  # Python
+  - python=3.11
+
+  # Core scientific packages (install via conda for better performance)
+  - numpy>=1.24.0
+  - pandas>=2.0.0
+  - scipy>=1.10.0
+
+  # Database
+  - postgresql>=15.0
+  - psycopg2>=2.9.0
+
+  # Development tools
+  - pip>=23.0
+  - setuptools>=65.0
+  - wheel>=0.38.0
+
+  # Testing
+  - pytest>=7.4.0
+  - pytest-asyncio>=0.21.0
+
+  # Pip packages (not available in conda or better via pip)
+  - pip:
+    # Web Framework
+    - fastapi==0.104.1
+    - uvicorn[standard]==0.24.0
+    - pydantic==2.5.0
+    - pydantic-settings==2.1.0
+    - python-multipart==0.0.6
+
+    # Database
+    - sqlalchemy[asyncio]==2.0.23
+    - asyncpg==0.29.0
+    - alembic==1.12.1
+
+    # Vector Database
+    - chromadb==0.4.18
+
+    # LLM & AI
+    - langchain==0.1.0
+    - langchain-community==0.0.10
+    - langchain-openai==0.0.2
+    - openai==1.6.1
+
+    # Embeddings & ML
+    - sentence-transformers==2.2.2
+    - torch==2.1.1
+    - transformers==4.35.2
+
+    # NLP
+    - textblob==0.17.1
+    - nltk==3.8.1
+
+    # Utilities
+    - python-dotenv==1.0.0
+    - aiofiles==23.2.1
+    - pyyaml==6.0.1
+
+    # Security
+    - python-jose[cryptography]==3.3.0
+    - passlib[bcrypt]==1.7.4
+    - bcrypt==4.1.1
+
+    # HTTP
+    - httpx==0.25.2
+    - aiohttp==3.9.1
+
+    # Logging
+    - loguru==0.7.2
+    - python-json-logger==2.0.7
+
+    # Testing
+    - pytest-cov==4.1.0
+    - pytest-mock==3.12.0
+
+    # Development
+    - black==23.12.0
+    - isort==5.13.2
+    - flake8==6.1.0
+    - mypy==1.7.1
+    - pre-commit==3.6.0
+
+# ==============================================
+# Usage Instructions
+# ==============================================
+#
+# Create environment from this file:
+#   conda env create -f environment.yml
+#
+# Activate environment:
+#   conda activate memray
+#
+# Update environment:
+#   conda env update -f environment.yml --prune
+#
+# Export current environment:
+#   conda env export > environment.yml
+#
+# Remove environment:
+#   conda env remove -n memray
+#
+# ==============================================

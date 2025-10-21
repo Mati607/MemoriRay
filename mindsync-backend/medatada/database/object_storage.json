@@ -1,0 +1,6 @@
+{
+  "dir_path": "mindsync_memory/data/database/object_storage",
+  "video_dir_postfix": "/video",
+  "audio_dir_postfix": "/audio",
+  "text_dir_postfix": "/text"
+}
