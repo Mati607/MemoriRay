@@ -13,6 +13,9 @@ accelerate = ">=0.33,<1"
 torch = ">=2.2,<3"
 safetensors = ">=0.4,<1"
 sentencepiece = ">=0.2,<1"   # needed for many tokenizer types
+google-generativeai = "^0.8.5"
+python-dotenv = "^1.2.1"
+google-genai = "^1.46.0"
 
 [tool.poetry.scripts]
 chatbot = "chatbot.main:run"

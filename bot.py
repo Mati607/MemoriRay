@@ -47,7 +47,6 @@ def generate_reply(model, tok, messages: List[Dict[str, str]], max_new_tokens: i
         pad_token_id=tok.eos_token_id,
     )
     text = tok.decode(out[0], skip_special_tokens=True)
-    # Extract only the assistant's final part by removing the prompt prefix:
     return text[len(prompt):].strip()
 
 def main():
