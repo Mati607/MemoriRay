@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "tiny-chatbot"
+version = "0.1.0"
+description = "A simple Python chatbot using Hugging Face Transformers"
+authors = ["Your Name <you@example.com>"]
+readme = "README.md"
+packages = [{ include = "chatbot" }]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+transformers = ">=4.41,<5"
+accelerate = ">=0.33,<1"
+torch = ">=2.2,<3"
+safetensors = ">=0.4,<1"
+sentencepiece = ">=0.2,<1"   # needed for many tokenizer types
+
+[tool.poetry.scripts]
+chatbot = "chatbot.main:run"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

@@ -38,6 +38,30 @@ streamlit run app.py
 ```
 Then open the local URL shown in the terminal.
 
+## Run the CLI chat bot (Poetry)
+This repo already contains `pyproject.toml`, so you can install and run with Poetry directly.
+
+1) Install Poetry (one of):
+```bash
+brew install poetry            # macOS
+# or
+pipx install poetry
+```
+
+2) Install dependencies:
+```bash
+poetry install
+```
+
+3) Run the bot:
+```bash
+poetry run python bot.py
+```
+
+Notes:
+- On Apple Silicon, PyTorch may use `mps` (Metal) automatically if available; otherwise CPU is used.
+- If you were starting a brand-new project without `pyproject.toml`, you would first run `poetry init` to create it (not needed here).
+
 ## How it works
 - Memories are embedded with `all-MiniLM-L6-v2` and added to a cosine-similarity FAISS index.
 - On chat, your message is embedded and used to retrieve top-k memories; we prompt a local LLM (Ollama) to weave them into a gentle response. If Ollama isn’t running, a template-based fallback reply is used.
