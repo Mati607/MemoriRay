@@ -26,7 +26,7 @@ GOOGLE_API_KEY=your_google_api_key
 ## Run the backend (FastAPI)
 
 ```bash
-poetry run python gemini_bot.py
+poetry run python bot.py
 ```
 
 ## Run the frontend (Streamlit)
