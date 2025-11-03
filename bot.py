@@ -1,15 +1,23 @@
 import os
+import base64
 from contextlib import asynccontextmanager
 from typing import Optional
+from typing import Optional
+import requests
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, HttpUrl
 from dotenv import load_dotenv
 from google import genai
+import sys
+from pathlib import Path
+import importlib.util
 
+if importlib.util.find_spec("baml_client") is None:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
+from baml_client import b as baml  # type: ignore
 
 from fastapi.responses import HTMLResponse, Response
 
@@ -21,6 +29,11 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     reply: str
+
+class AddMemoryRequest(BaseModel):
+    text: Optional[str] = None
+    base_64_image: Optional[str] = None
+    image_url: Optional[HttpUrl] = None
 
 
 @asynccontextmanager
@@ -73,19 +86,12 @@ def health():
 
 
 @app.post("/chat", response_model=ChatResponse)
-def chat(req: ChatRequest):
+async def chat(req: ChatRequest):
     if not req.message or not req.message.strip():
         raise HTTPException(status_code=400, detail="`message` must not be empty.")
 
-    client: genai.Client = app.state.genai_client
-    model_name = (req.model or DEFAULT_MODEL).strip()
-
     try:
-        resp = client.models.generate_content(
-            model=model_name,
-            contents=req.message,
-        )
-        reply_text = getattr(resp, "text", "") or ""
+        reply_text = await baml.ChatReply(req.message)
         return ChatResponse(reply=reply_text)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Model error: {e}")
@@ -94,3 +100,44 @@ def chat(req: ChatRequest):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("bot:app", host="127.0.0.1", port=8000, reload=True)
+
+
+def convert_image_to_base64(image_url: HttpUrl) -> str:
+    response = requests.get(str(image_url), timeout=15)
+    response.raise_for_status()
+    return base64.b64encode(response.content).decode("utf-8")
+
+memory_store : list[tuple[str, Optional[str]]] = []
+
+def get_image_description(image_url: HttpUrl) -> str:
+    response = requests.get(image_url)
+    return response.text
+
+def is_gibberish(text: str) -> bool:
+    raise  NotImplementedError("Not implemented") # TODO: Implement this
+
+@app.post("/add_memory", response_model=ChatResponse)
+def add_memory(req: AddMemoryRequest):
+    if req.base_64_image:
+        if req.text:
+            memory_store.append((req.text, req.base_64_image))
+        else:
+            description = get_image_description(req.base_64_image)
+            memory_store.append((description,req.base_64_image))
+
+    elif req.image_url:
+        base_64_image = convert_image_to_base64(req.image_url)
+        if req.text:
+            memory_store.append((req.text, base_64_image))
+        else:
+            description = get_image_description(req.image_url)
+            memory_store.append((description,req.image_url))
+    elif req.text:
+        memory_store.append((req.text,None)) 
+    else:   
+        return ChatResponse(reply="Memory addition failed")
+
+    return ChatResponse(reply="Memory added successfully")
+
+def get_memory(query: str) -> str:
+    raise  NotImplementedError("Not implemented") # TODO: Implement this

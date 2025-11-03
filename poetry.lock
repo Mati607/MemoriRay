@@ -115,6 +115,24 @@ files = [
 ]
 
 [[package]]
+name = "baml-py"
+version = "0.212.0"
+description = "BAML python bindings (pyproject.toml)"
+optional = false
+python-versions = "*"
+groups = ["main"]
+files = [
+    {file = "baml_py-0.212.0-cp38-abi3-macosx_10_12_x86_64.whl", hash = "sha256:763e360e146efbdf15007a7e5ba23d755a217a4ae533465c3ba561e74ff45c69"},
+    {file = "baml_py-0.212.0-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:b7e4ca6fb6f3512b199382eecb08ed20241f5fc107865c47cc4d9a28bd686ca4"},
+    {file = "baml_py-0.212.0-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:7af2708e9c1ad4619cc31950fac5bad14146a60223db8a5545a44c5ab89ebc27"},
+    {file = "baml_py-0.212.0-cp38-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:a558fb13d71d2f20455782a0b74e20d7cbaa85e4feff162b35953bdedde26c40"},
+    {file = "baml_py-0.212.0-cp38-abi3-musllinux_1_1_aarch64.whl", hash = "sha256:51e7b0c9c9b3d68f6ad0394e55e6cd43560fa8cacb72032abcd82bf4a6865cef"},
+    {file = "baml_py-0.212.0-cp38-abi3-musllinux_1_1_x86_64.whl", hash = "sha256:77a488b29ca6a1053ae38aed1029109a039fa3246140b19c11451abc6e07df9c"},
+    {file = "baml_py-0.212.0-cp38-abi3-win_amd64.whl", hash = "sha256:565b8f911d39eeb48c6bc4d8fc66dea39ac8239f383865289a26f8d09abd7d4f"},
+    {file = "baml_py-0.212.0-cp38-abi3-win_arm64.whl", hash = "sha256:0d609c1da9c8d6e53846367f90af5feb312780468610a14dcd70fed069f65a2f"},
+]
+
+[[package]]
 name = "blinker"
 version = "1.9.0"
 description = "Fast, simple object-to-object and broadcast signaling"
@@ -3154,4 +3172,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.10"
-content-hash = "8d695583e926d3271ce6add7297a8fade23a240e948f03187ffbeecc797bc41c"
+content-hash = "00e8a6ad5bfd1361d35734fbd578766ce4ee1bccc7c30c820ed2c0afc2acc4fe"

@@ -1,10 +1,10 @@
 [tool.poetry]
 name = "tiny-chatbot"
 version = "0.1.0"
-description = "A simple Python chatbot using Hugging Face Transformers"
+description = "A simple Python chatbot using Hugging Face Transformers and BAML"
 authors = ["Your Name <you@example.com>"]
 readme = "README.md"
-packages = [{ include = "chatbot" }]
+package-mode = false  
 
 [tool.poetry.dependencies]
 python = "^3.10"
@@ -12,17 +12,20 @@ transformers = ">=4.41,<5"
 accelerate = ">=0.33,<1"
 torch = ">=2.2,<3"
 safetensors = ">=0.4,<1"
-sentencepiece = ">=0.2,<1"   # needed for many tokenizer types
+sentencepiece = ">=0.2,<1"
 google-generativeai = "^0.8.5"
-python-dotenv = "^1.2.1"
 google-genai = "^1.46.0"
 fastapi = "^0.120.0"
 uvicorn = "^0.38.0"
+python-dotenv = "^1.2.1"
+requests = "^2.32.3"
+httpx = "^0.28.1"
+pydantic = "^2.10.0"
 streamlit = "^1.50.0"
+baml-py = "^0.212.0"
 
 [tool.poetry.scripts]
-chatbot = "chatbot.main:run"
-
+memori-api = "runserver:main" 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
