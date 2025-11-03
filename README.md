@@ -25,6 +25,10 @@ GOOGLE_API_KEY=your_google_api_key
 
 ## Run the backend (FastAPI)
 
+```
+baml-cli generate
+```
+
 ```bash
 poetry run python bot.py
 ```
