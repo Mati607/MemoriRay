@@ -91,18 +91,32 @@ class BamlSyncClient:
     def parse_stream(self):
       return self.__llm_stream_parser
     
-    def ChatReply(self, message: str,
+    def ChatReply(self, message: str,conversation_history: typing.List[str],sentiment: str,
         baml_options: BamlCallOptions = {},
     ) -> str:
         # Check if on_tick is provided
         if 'on_tick' in baml_options:
-            stream = self.stream.ChatReply(message=message,
+            stream = self.stream.ChatReply(message=message,conversation_history=conversation_history,sentiment=sentiment,
                 baml_options=baml_options)
             return stream.get_final_response()
         else:
             # Original non-streaming code
             result = self.__options.merge_options(baml_options).call_function_sync(function_name="ChatReply", args={
-                "message": message,
+                "message": message,"conversation_history": conversation_history,"sentiment": sentiment,
+            })
+            return typing.cast(str, result.cast_to(types, types, stream_types, False, __runtime__))
+    def SentimentAnalysis(self, user_message: str,
+        baml_options: BamlCallOptions = {},
+    ) -> str:
+        # Check if on_tick is provided
+        if 'on_tick' in baml_options:
+            stream = self.stream.SentimentAnalysis(user_message=user_message,
+                baml_options=baml_options)
+            return stream.get_final_response()
+        else:
+            # Original non-streaming code
+            result = self.__options.merge_options(baml_options).call_function_sync(function_name="SentimentAnalysis", args={
+                "user_message": user_message,
             })
             return typing.cast(str, result.cast_to(types, types, stream_types, False, __runtime__))
     
@@ -114,11 +128,23 @@ class BamlStreamClient:
     def __init__(self, options: DoNotUseDirectlyCallManager):
         self.__options = options
 
-    def ChatReply(self, message: str,
+    def ChatReply(self, message: str,conversation_history: typing.List[str],sentiment: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.BamlSyncStream[str, str]:
         ctx, result = self.__options.merge_options(baml_options).create_sync_stream(function_name="ChatReply", args={
-            "message": message,
+            "message": message,"conversation_history": conversation_history,"sentiment": sentiment,
+        })
+        return baml_py.BamlSyncStream[str, str](
+          result,
+          lambda x: typing.cast(str, x.cast_to(types, types, stream_types, True, __runtime__)),
+          lambda x: typing.cast(str, x.cast_to(types, types, stream_types, False, __runtime__)),
+          ctx,
+        )
+    def SentimentAnalysis(self, user_message: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.BamlSyncStream[str, str]:
+        ctx, result = self.__options.merge_options(baml_options).create_sync_stream(function_name="SentimentAnalysis", args={
+            "user_message": user_message,
         })
         return baml_py.BamlSyncStream[str, str](
           result,
@@ -134,11 +160,18 @@ class BamlHttpRequestClient:
     def __init__(self, options: DoNotUseDirectlyCallManager):
         self.__options = options
 
-    def ChatReply(self, message: str,
+    def ChatReply(self, message: str,conversation_history: typing.List[str],sentiment: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
         result = self.__options.merge_options(baml_options).create_http_request_sync(function_name="ChatReply", args={
-            "message": message,
+            "message": message,"conversation_history": conversation_history,"sentiment": sentiment,
+        }, mode="request")
+        return result
+    def SentimentAnalysis(self, user_message: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        result = self.__options.merge_options(baml_options).create_http_request_sync(function_name="SentimentAnalysis", args={
+            "user_message": user_message,
         }, mode="request")
         return result
     
@@ -149,11 +182,18 @@ class BamlHttpStreamRequestClient:
     def __init__(self, options: DoNotUseDirectlyCallManager):
         self.__options = options
 
-    def ChatReply(self, message: str,
+    def ChatReply(self, message: str,conversation_history: typing.List[str],sentiment: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
         result = self.__options.merge_options(baml_options).create_http_request_sync(function_name="ChatReply", args={
-            "message": message,
+            "message": message,"conversation_history": conversation_history,"sentiment": sentiment,
+        }, mode="stream")
+        return result
+    def SentimentAnalysis(self, user_message: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        result = self.__options.merge_options(baml_options).create_http_request_sync(function_name="SentimentAnalysis", args={
+            "user_message": user_message,
         }, mode="stream")
         return result
     

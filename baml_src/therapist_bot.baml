@@ -1,4 +1,4 @@
-function ChatReply(message: string) -> string {
+function ChatReply(message: string, conversation_history: string[], sentiment: string) -> string {
   client "GeminiDefault"
   prompt #"
     {{ _.role("system") }}
@@ -21,6 +21,13 @@ function ChatReply(message: string) -> string {
     {{ ctx.output_format }}
 
     {{ _.role("user") }}
+     This is the past conversation history for the user:
+    {{ conversation_history }}
+
+    The user's current message is:
     {{ message }}
+
+    The sentiment of the user's current message is:
+    {{ sentiment }}
   "#
 }

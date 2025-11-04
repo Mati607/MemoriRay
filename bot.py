@@ -84,17 +84,17 @@ def favicon():
 def health():
     return {"status": "ok"}
 
+msg_history : list[str] = []
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
     if not req.message or not req.message.strip():
         raise HTTPException(status_code=400, detail="`message` must not be empty.")
 
-    try:
-        reply_text = await baml.ChatReply(req.message)
-        return ChatResponse(reply=reply_text)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Model error: {e}")
+    sentiment = await baml.SentimentAnalysis(req.message)
+    reply_text = await baml.ChatReply(req.message, msg_history, sentiment)
+    msg_history.append(req.message + " -> " + reply_text)
+    return ChatResponse(reply=reply_text)
 
 
 if __name__ == "__main__":
