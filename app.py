@@ -1,9 +1,32 @@
 import os
+import base64
 import time
 from typing import Dict, Any, List
+import json
 
 import requests
 import streamlit as st
+
+# Persist chat locally so it survives browser refreshes
+HISTORY_PATH = os.path.join(os.path.dirname(__file__), "chat_history.json")
+
+def load_saved_messages() -> List[Dict[str, Any]]:
+    try:
+        if os.path.exists(HISTORY_PATH):
+            with open(HISTORY_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, list):
+                    return [m for m in data if isinstance(m, dict) and "role" in m and "content" in m]
+    except Exception:
+        pass
+    return []
+
+def save_messages(messages: List[Dict[str, Any]]) -> None:
+    try:
+        with open(HISTORY_PATH, "w", encoding="utf-8") as f:
+            json.dump(messages, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
 
 st.set_page_config(
     page_title="MEMORIRAY · Mental Health Chat",
@@ -147,6 +170,11 @@ col_clear, col_export = st.columns([1,1])
 with col_clear:
     if st.button("🧹 Clear"):
         st.session_state.pop("messages", None)
+        try:
+            if os.path.exists(HISTORY_PATH):
+                os.remove(HISTORY_PATH)
+        except Exception:
+            pass
         st.rerun()
 with col_export:
     download_ready = st.session_state.get("messages", [])
@@ -163,15 +191,19 @@ with col_export:
         )
 
 if "messages" not in st.session_state:
-    st.session_state.messages: List[Dict[str, Any]] = [
-        {
-            "role": "assistant",
-            "content": (
-                "Hi—I'm here with a calm, supportive ear. "
-                "How are you feeling right now? 🌱"
-            ),
-        }
-    ]
+    saved = load_saved_messages()
+    if saved:
+        st.session_state.messages = saved
+    else:
+        st.session_state.messages = [
+            {
+                "role": "assistant",
+                "content": (
+                    "Hi—I'm here with a calm, supportive ear. "
+                    "How are you feeling right now? 🌱"
+                ),
+            }
+        ]
 
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
@@ -191,10 +223,55 @@ def call_chat_api(message: str) -> str:
     data = r.json()
     return data.get("reply", "") or ""
 
+def call_add_memory(base_64_image: str) -> str:
+    base = os.getenv("CHAT_API_BASE", "http://127.0.0.1:8000").rstrip("/")
+    url = f"{base}/add_memory"
+    payload = {"base_64_image": base_64_image}
+    r = requests.post(url, json=payload, timeout=60)
+    if not r.ok:
+        try:
+            detail = r.json().get("detail", r.text)
+        except Exception:
+            detail = r.text
+        raise RuntimeError(f"Upload failed ({r.status_code}). {detail}")
+    data = r.json()
+    return data.get("reply", "") or ""
+
+if "attach_uploader_key" not in st.session_state:
+    st.session_state.attach_uploader_key = 0
+
+with st.sidebar:
+    st.markdown("**📎 Attach Memories**")
+    st.caption("Add an image to your memory vault")
+    with st.form("attach_image_form", border=True):
+        uploaded = st.file_uploader(
+            "Upload an image",
+            type=["png", "jpg", "jpeg", "webp"],
+            accept_multiple_files=False,
+            key=f"attach_uploader_{st.session_state.attach_uploader_key}",
+        )
+        submitted = st.form_submit_button("Add to memory")
+        if submitted:
+            if uploaded is None:
+                st.warning("Please select an image.")
+            else:
+                file_bytes = uploaded.getvalue()
+                b64_str = base64.b64encode(file_bytes).decode("utf-8")
+                try:
+                    resp = call_add_memory(b64_str)
+                    _msg = st.empty()
+                    _msg.success(resp or "Memory added successfully")
+                    time.sleep(2)
+                    st.session_state.attach_uploader_key += 1
+                    st.rerun()
+                except Exception as e:
+                    st.error(str(e))
+
 prompt = st.chat_input("Share what's on your mind…")
 
 if prompt:
     st.session_state.messages.append({"role": "user", "content": prompt})
+    save_messages(st.session_state.messages)
     with st.chat_message("user"):
         st.markdown(prompt)
 
@@ -217,6 +294,7 @@ if prompt:
             reply_placeholder.markdown(reply_text)
 
     st.session_state.messages.append({"role": "assistant", "content": reply_text})
+    save_messages(st.session_state.messages)
 
 st.markdown(
     '<div class="footer">This is a supportive tool and not a substitute for professional care. '

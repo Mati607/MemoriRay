@@ -31,9 +31,7 @@ class ChatResponse(BaseModel):
     reply: str
 
 class AddMemoryRequest(BaseModel):
-    text: Optional[str] = None
     base_64_image: Optional[str] = None
-    image_url: Optional[HttpUrl] = None
 
 
 @asynccontextmanager
@@ -109,33 +107,24 @@ def convert_image_to_base64(image_url: HttpUrl) -> str:
 
 memory_store : list[tuple[str, Optional[str]]] = []
 
-def get_image_description(image_url: HttpUrl) -> str:
-    response = requests.get(image_url)
-    return response.text
-
-def is_gibberish(text: str) -> bool:
-    raise  NotImplementedError("Not implemented") # TODO: Implement this
+def get_image_description_from_base64(image_b64: str) -> str:
+    # Placeholder for future vision/LLM description; keep simple for now
+    return "Image memory"
 
 @app.post("/add_memory", response_model=ChatResponse)
 def add_memory(req: AddMemoryRequest):
-    if req.base_64_image:
-        if req.text:
-            memory_store.append((req.text, req.base_64_image))
-        else:
-            description = get_image_description(req.base_64_image)
-            memory_store.append((description,req.base_64_image))
+    if not req.base_64_image:
+        raise HTTPException(status_code=400, detail="`base_64_image` is required.")
 
-    elif req.image_url:
-        base_64_image = convert_image_to_base64(req.image_url)
-        if req.text:
-            memory_store.append((req.text, base_64_image))
-        else:
-            description = get_image_description(req.image_url)
-            memory_store.append((description,req.image_url))
-    elif req.text:
-        memory_store.append((req.text,None)) 
-    else:   
-        return ChatResponse(reply="Memory addition failed")
+    try:
+        b64_data = req.base_64_image.split(",", 1)[-1]
+        base64.b64decode(b64_data, validate=True)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid base64 image data.")
+
+    description = get_image_description_from_base64(req.base_64_image)
+    print(description)
+    memory_store.append((description, req.base_64_image))
 
     return ChatResponse(reply="Memory added successfully")
 
