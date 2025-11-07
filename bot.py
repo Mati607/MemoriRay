@@ -18,6 +18,7 @@ if importlib.util.find_spec("baml_client") is None:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from baml_client import b as baml  # type: ignore
+import baml_py
 
 from fastapi.responses import HTMLResponse, Response
 
@@ -107,26 +108,30 @@ def convert_image_to_base64(image_url: HttpUrl) -> str:
 
 memory_store : list[tuple[str, Optional[str]]] = []
 
-def get_image_description_from_base64(image_b64: str) -> str:
-    # Placeholder for future vision/LLM description; keep simple for now
-    return "Image memory"
+async def get_image_description_from_base64(image_b64: str, media_type: str) -> str:
+    image = baml_py.Image.from_base64(media_type, image_b64)
+    description = await baml.ImageDescription(image)
+    return description
 
 @app.post("/add_memory", response_model=ChatResponse)
-def add_memory(req: AddMemoryRequest):
+async def add_memory(req: AddMemoryRequest):
     if not req.base_64_image:
         raise HTTPException(status_code=400, detail="`base_64_image` is required.")
 
     try:
+        media_type = "image/png"
+        if req.base_64_image.startswith("data:") and ";base64," in req.base_64_image:
+            media_type = req.base_64_image[5:].split(";base64,", 1)[0]
+
         b64_data = req.base_64_image.split(",", 1)[-1]
         base64.b64decode(b64_data, validate=True)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid base64 image data.")
 
-    description = get_image_description_from_base64(req.base_64_image)
-    print(description)
+    description = await get_image_description_from_base64(b64_data, media_type)
     memory_store.append((description, req.base_64_image))
 
-    return ChatResponse(reply="Memory added successfully")
+    return ChatResponse(reply=description)
 
 def get_memory(query: str) -> str:
-    raise  NotImplementedError("Not implemented") # TODO: Implement this
+    raise  NotImplementedError("Not implemented") 

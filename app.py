@@ -258,12 +258,10 @@ with st.sidebar:
                 file_bytes = uploaded.getvalue()
                 b64_str = base64.b64encode(file_bytes).decode("utf-8")
                 try:
-                    resp = call_add_memory(b64_str)
+                    with st.spinner("Uploading and processing image…"):
+                        resp = call_add_memory(b64_str)
                     _msg = st.empty()
                     _msg.success(resp or "Memory added successfully")
-                    time.sleep(2)
-                    st.session_state.attach_uploader_key += 1
-                    st.rerun()
                 except Exception as e:
                     st.error(str(e))
 
