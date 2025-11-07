@@ -13,6 +13,7 @@ from google import genai
 import sys
 from pathlib import Path
 import importlib.util
+from dataclasses import dataclass
 
 if importlib.util.find_spec("baml_client") is None:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -34,10 +35,13 @@ class ChatResponse(BaseModel):
 class AddMemoryRequest(BaseModel):
     base_64_image: Optional[str] = None
 
+@dataclass
+class SelectedMemory:
+    description: str
+    images: list[str]
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
     load_dotenv()
     try:
         app.state.genai_client = genai.Client()  
@@ -91,7 +95,9 @@ async def chat(req: ChatRequest):
         raise HTTPException(status_code=400, detail="`message` must not be empty.")
 
     sentiment = await baml.SentimentAnalysis(req.message)
-    reply_text = await baml.ChatReply(req.message, msg_history, sentiment)
+    selected_memory = await get_memory(req.message)
+    memory_description = selected_memory.description
+    reply_text = await baml.ChatReply(req.message, msg_history, sentiment, memory_description)
     msg_history.append(req.message + " -> " + reply_text)
     return ChatResponse(reply=reply_text)
 
@@ -106,7 +112,8 @@ def convert_image_to_base64(image_url: HttpUrl) -> str:
     response.raise_for_status()
     return base64.b64encode(response.content).decode("utf-8")
 
-memory_store : list[tuple[str, Optional[str]]] = []
+memory_descriptions : list[dict[str, int | str]] = []
+images_store : list[str] = []
 
 async def get_image_description_from_base64(image_b64: str, media_type: str) -> str:
     image = baml_py.Image.from_base64(media_type, image_b64)
@@ -129,9 +136,25 @@ async def add_memory(req: AddMemoryRequest):
         raise HTTPException(status_code=400, detail="Invalid base64 image data.")
 
     description = await get_image_description_from_base64(b64_data, media_type)
-    memory_store.append((description, req.base_64_image))
+    images_store.append(req.base_64_image)
+    memory_descriptions.append({
+        "description": description,
+        "image_index": len(images_store) - 1,
+    })
 
     return ChatResponse(reply=description)
 
-def get_memory(query: str) -> str:
-    raise  NotImplementedError("Not implemented") 
+async def get_memory(query: str) -> SelectedMemory:
+    if not memory_descriptions:
+        return SelectedMemory("", [])
+
+    select_memory_response = await baml.SelectMemory(query, memory_descriptions)
+    index_list = getattr(select_memory_response, "image_index_list", []) or []
+    description = getattr(select_memory_response, "selected_memories_summary", "") or ""
+
+    image_list = [
+        images_store[idx]
+        for idx in index_list
+        if isinstance(idx, int) and 0 <= idx < len(images_store)
+    ]
+    return SelectedMemory(description, image_list)

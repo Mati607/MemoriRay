@@ -79,19 +79,19 @@ class BamlAsyncClient:
     def parse_stream(self):
       return self.__llm_stream_parser
     
-    async def ChatReply(self, message: str,conversation_history: typing.List[str],sentiment: str,
+    async def ChatReply(self, message: str,conversation_history: typing.List[str],sentiment: str,memory: str,
         baml_options: BamlCallOptions = {},
     ) -> str:
         # Check if on_tick is provided
         if 'on_tick' in baml_options:
             # Use streaming internally when on_tick is provided
-            stream = self.stream.ChatReply(message=message,conversation_history=conversation_history,sentiment=sentiment,
+            stream = self.stream.ChatReply(message=message,conversation_history=conversation_history,sentiment=sentiment,memory=memory,
                 baml_options=baml_options)
             return await stream.get_final_response()
         else:
             # Original non-streaming code
             result = await self.__options.merge_options(baml_options).call_function_async(function_name="ChatReply", args={
-                "message": message,"conversation_history": conversation_history,"sentiment": sentiment,
+                "message": message,"conversation_history": conversation_history,"sentiment": sentiment,"memory": memory,
             })
             return typing.cast(str, result.cast_to(types, types, stream_types, False, __runtime__))
     async def ImageDescription(self, image_b64: baml_py.Image,
@@ -109,6 +109,21 @@ class BamlAsyncClient:
                 "image_b64": image_b64,
             })
             return typing.cast(str, result.cast_to(types, types, stream_types, False, __runtime__))
+    async def SelectMemory(self, query: str,memories_store: typing.List["types.MemoriesStore"],
+        baml_options: BamlCallOptions = {},
+    ) -> types.SelectMemoryResponse:
+        # Check if on_tick is provided
+        if 'on_tick' in baml_options:
+            # Use streaming internally when on_tick is provided
+            stream = self.stream.SelectMemory(query=query,memories_store=memories_store,
+                baml_options=baml_options)
+            return await stream.get_final_response()
+        else:
+            # Original non-streaming code
+            result = await self.__options.merge_options(baml_options).call_function_async(function_name="SelectMemory", args={
+                "query": query,"memories_store": memories_store,
+            })
+            return typing.cast(types.SelectMemoryResponse, result.cast_to(types, types, stream_types, False, __runtime__))
     async def SentimentAnalysis(self, user_message: str,
         baml_options: BamlCallOptions = {},
     ) -> str:
@@ -133,11 +148,11 @@ class BamlStreamClient:
     def __init__(self, options: DoNotUseDirectlyCallManager):
         self.__options = options
 
-    def ChatReply(self, message: str,conversation_history: typing.List[str],sentiment: str,
+    def ChatReply(self, message: str,conversation_history: typing.List[str],sentiment: str,memory: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.BamlStream[str, str]:
         ctx, result = self.__options.merge_options(baml_options).create_async_stream(function_name="ChatReply", args={
-            "message": message,"conversation_history": conversation_history,"sentiment": sentiment,
+            "message": message,"conversation_history": conversation_history,"sentiment": sentiment,"memory": memory,
         })
         return baml_py.BamlStream[str, str](
           result,
@@ -155,6 +170,18 @@ class BamlStreamClient:
           result,
           lambda x: typing.cast(str, x.cast_to(types, types, stream_types, True, __runtime__)),
           lambda x: typing.cast(str, x.cast_to(types, types, stream_types, False, __runtime__)),
+          ctx,
+        )
+    def SelectMemory(self, query: str,memories_store: typing.List["types.MemoriesStore"],
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.BamlStream[stream_types.SelectMemoryResponse, types.SelectMemoryResponse]:
+        ctx, result = self.__options.merge_options(baml_options).create_async_stream(function_name="SelectMemory", args={
+            "query": query,"memories_store": memories_store,
+        })
+        return baml_py.BamlStream[stream_types.SelectMemoryResponse, types.SelectMemoryResponse](
+          result,
+          lambda x: typing.cast(stream_types.SelectMemoryResponse, x.cast_to(types, types, stream_types, True, __runtime__)),
+          lambda x: typing.cast(types.SelectMemoryResponse, x.cast_to(types, types, stream_types, False, __runtime__)),
           ctx,
         )
     def SentimentAnalysis(self, user_message: str,
@@ -177,11 +204,11 @@ class BamlHttpRequestClient:
     def __init__(self, options: DoNotUseDirectlyCallManager):
         self.__options = options
 
-    async def ChatReply(self, message: str,conversation_history: typing.List[str],sentiment: str,
+    async def ChatReply(self, message: str,conversation_history: typing.List[str],sentiment: str,memory: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
         result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="ChatReply", args={
-            "message": message,"conversation_history": conversation_history,"sentiment": sentiment,
+            "message": message,"conversation_history": conversation_history,"sentiment": sentiment,"memory": memory,
         }, mode="request")
         return result
     async def ImageDescription(self, image_b64: baml_py.Image,
@@ -189,6 +216,13 @@ class BamlHttpRequestClient:
     ) -> baml_py.baml_py.HTTPRequest:
         result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="ImageDescription", args={
             "image_b64": image_b64,
+        }, mode="request")
+        return result
+    async def SelectMemory(self, query: str,memories_store: typing.List["types.MemoriesStore"],
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="SelectMemory", args={
+            "query": query,"memories_store": memories_store,
         }, mode="request")
         return result
     async def SentimentAnalysis(self, user_message: str,
@@ -206,11 +240,11 @@ class BamlHttpStreamRequestClient:
     def __init__(self, options: DoNotUseDirectlyCallManager):
         self.__options = options
 
-    async def ChatReply(self, message: str,conversation_history: typing.List[str],sentiment: str,
+    async def ChatReply(self, message: str,conversation_history: typing.List[str],sentiment: str,memory: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
         result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="ChatReply", args={
-            "message": message,"conversation_history": conversation_history,"sentiment": sentiment,
+            "message": message,"conversation_history": conversation_history,"sentiment": sentiment,"memory": memory,
         }, mode="stream")
         return result
     async def ImageDescription(self, image_b64: baml_py.Image,
@@ -218,6 +252,13 @@ class BamlHttpStreamRequestClient:
     ) -> baml_py.baml_py.HTTPRequest:
         result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="ImageDescription", args={
             "image_b64": image_b64,
+        }, mode="stream")
+        return result
+    async def SelectMemory(self, query: str,memories_store: typing.List["types.MemoriesStore"],
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="SelectMemory", args={
+            "query": query,"memories_store": memories_store,
         }, mode="stream")
         return result
     async def SentimentAnalysis(self, user_message: str,

@@ -7,7 +7,6 @@ import json
 import requests
 import streamlit as st
 
-# Persist chat locally so it survives browser refreshes
 HISTORY_PATH = os.path.join(os.path.dirname(__file__), "chat_history.json")
 
 def load_saved_messages() -> List[Dict[str, Any]]:
@@ -245,25 +244,27 @@ with st.sidebar:
     st.caption("Add an image to your memory vault")
     with st.form("attach_image_form", border=True):
         uploaded = st.file_uploader(
-            "Upload an image",
+            "Upload image(s)",
             type=["png", "jpg", "jpeg", "webp"],
-            accept_multiple_files=False,
+            accept_multiple_files=True,
             key=f"attach_uploader_{st.session_state.attach_uploader_key}",
         )
         submitted = st.form_submit_button("Add to memory")
         if submitted:
-            if uploaded is None:
-                st.warning("Please select an image.")
+            if not uploaded:
+                st.warning("Please select one or more images.")
             else:
-                file_bytes = uploaded.getvalue()
-                b64_str = base64.b64encode(file_bytes).decode("utf-8")
-                try:
-                    with st.spinner("Uploading and processing image…"):
-                        resp = call_add_memory(b64_str)
-                    _msg = st.empty()
-                    _msg.success(resp or "Memory added successfully")
-                except Exception as e:
-                    st.error(str(e))
+                results = st.container()
+                total = len(uploaded)
+                for idx, uf in enumerate(uploaded, start=1):
+                    try:
+                        file_bytes = uf.getvalue()
+                        b64_str = base64.b64encode(file_bytes).decode("utf-8")
+                        with st.spinner(f"Uploading and processing image {idx} of {total}…"):
+                            resp = call_add_memory(b64_str)
+                        results.success(resp or f"{uf.name}: Memory added successfully")
+                    except Exception as e:
+                        results.error(f"{uf.name}: {e}")
 
 prompt = st.chat_input("Share what's on your mind…")
 

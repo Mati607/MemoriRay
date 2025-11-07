@@ -23,8 +23,16 @@ class StreamState(BaseModel, typing.Generic[StreamStateValueT]):
     value: StreamStateValueT
     state: typing_extensions.Literal["Pending", "Incomplete", "Complete"]
 # #########################################################################
-# Generated classes (0)
+# Generated classes (2)
 # #########################################################################
+
+class MemoriesStore(BaseModel):
+    description: typing.Optional[str] = None
+    image_index: typing.Optional[int] = None
+
+class SelectMemoryResponse(BaseModel):
+    selected_memories_summary: typing.Optional[str] = None
+    image_index_list: typing.List[int]
 
 # #########################################################################
 # Generated type aliases (0)

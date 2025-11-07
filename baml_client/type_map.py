@@ -16,5 +16,11 @@ from . import stream_types
 
 type_map = {
 
+    "types.MemoriesStore": types.MemoriesStore,
+    "stream_types.MemoriesStore": stream_types.MemoriesStore,
+
+    "types.SelectMemoryResponse": types.SelectMemoryResponse,
+    "stream_types.SelectMemoryResponse": stream_types.SelectMemoryResponse,
+
 
 }

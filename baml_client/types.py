@@ -41,8 +41,16 @@ def all_succeeded(checks: typing.Dict[CheckName, Check]) -> bool:
 # #########################################################################
 
 # #########################################################################
-# Generated classes (0)
+# Generated classes (2)
 # #########################################################################
+
+class MemoriesStore(BaseModel):
+    description: str
+    image_index: int
+
+class SelectMemoryResponse(BaseModel):
+    selected_memories_summary: str
+    image_index_list: typing.List[int]
 
 # #########################################################################
 # Generated type aliases (0)
