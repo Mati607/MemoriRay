@@ -31,6 +31,7 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     reply: str
+    images: list[str] | None = None
 
 class AddMemoryRequest(BaseModel):
     base_64_image: Optional[str] = None
@@ -97,9 +98,10 @@ async def chat(req: ChatRequest):
     sentiment = await baml.SentimentAnalysis(req.message)
     selected_memory = await get_memory(req.message)
     memory_description = selected_memory.description
+    image_list = selected_memory.images
     reply_text = await baml.ChatReply(req.message, msg_history, sentiment, memory_description)
     msg_history.append(req.message + " -> " + reply_text)
-    return ChatResponse(reply=reply_text)
+    return ChatResponse(reply=reply_text, images=image_list)
 
 
 if __name__ == "__main__":

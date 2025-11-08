@@ -208,7 +208,7 @@ for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-def call_chat_api(message: str) -> str:
+def call_chat_api(message: str) -> Dict[str, Any]:
     base = os.getenv("CHAT_API_BASE", "http://127.0.0.1:8000").rstrip("/")
     url = f"{base}/chat"
     payload = {"message": message}
@@ -220,7 +220,10 @@ def call_chat_api(message: str) -> str:
             detail = r.text
         raise RuntimeError(f"I'm having trouble connecting right now ({r.status_code}).")
     data = r.json()
-    return data.get("reply", "") or ""
+    return {
+        "reply": data.get("reply", "") or "",
+        "images": data.get("images") or [],
+    }
 
 def call_add_memory(base_64_image: str) -> str:
     base = os.getenv("CHAT_API_BASE", "http://127.0.0.1:8000").rstrip("/")
@@ -277,12 +280,21 @@ if prompt:
     with st.chat_message("assistant"):
         reply_placeholder = st.empty()
         try:
-            reply_text = call_chat_api(prompt)
+            api_result = call_chat_api(prompt)
+            reply_text = api_result.get("reply", "")
+            images = api_result.get("images", []) or []
             shown = ""
             for ch in reply_text:
                 shown += ch
                 reply_placeholder.markdown(shown)
                 time.sleep(0.002)
+            if images:
+                for img_b64 in images:
+                    try:
+                        img_bytes = base64.b64decode(img_b64)
+                        st.image(img_bytes, use_container_width=False)
+                    except Exception:
+                        pass
         except Exception:
             gentle_msg = (
                 "I’m feeling a bit disconnected right now. "
