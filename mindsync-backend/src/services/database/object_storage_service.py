@@ -5,8 +5,8 @@ import shutil
 DIR_PATH = "./data/database/object_storage"
 
 class ObjectStorageService:
-    def __init__(self):
-        self.dir_path = Path(DIR_PATH)
+    def __init__(self, path: str = DIR_PATH):
+        self.dir_path = Path(path)
         self.video_dir = self.dir_path / "video"
         self.audio_dir = self.dir_path / "audio"
         self.text_dir = self.dir_path / "text"
@@ -41,3 +41,11 @@ class ObjectStorageService:
             with open(target_path, 'wb') as f:
                 shutil.copyfileobj(data, f)
         return target_path
+
+# Example usage:
+if __name__ == "__main__":
+    service = ObjectStorageService("mindsync-backend/data/database/object_storage")
+    text_path = service.upload_text("sample.txt", "sample.txt")
+    print(f"Text file saved at: {text_path}")
+    photo_path = service.upload_photo("mindsync-backend/data/database/object_storage/photo/6-Reasons-To-Explore-Amusement-Parks.webp", "copied_photo.webp")
+    print(f"Photo file saved at: {photo_path}")

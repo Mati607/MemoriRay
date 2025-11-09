@@ -473,9 +473,9 @@ if __name__ == "__main__":
     # Database configuration
     db_config = {
         'host': 'localhost',
-        'database': 'mindsync',
-        'user': 'your_username',
-        'password': 'your_password',
+        'database': 'postgres',
+        'user': 'postgres',
+        'password': '12345678',
         'port': 5432
     }
     
