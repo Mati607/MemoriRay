@@ -195,3 +195,10 @@ async def get_memory(query: str) -> SelectedMemory:
         if isinstance(idx, int) and 0 <= idx < len(images_store)
     ]
     return SelectedMemory(description, image_list)
+    
+@app.post("/generate_report",response_model=ChatResponse)
+async def generate_report():
+    global msg_history
+    report = await baml.GenerateReport(msg_history)
+    # Serialize the Report pydantic model to JSON string to satisfy ChatResponse schema
+    return ChatResponse(reply=report.model_dump_json(indent=2))

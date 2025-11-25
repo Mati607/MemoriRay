@@ -105,6 +105,20 @@ class BamlSyncClient:
                 "message": message,"conversation_history": conversation_history,"sentiment": sentiment,"memory": memory,"escalate_message": escalate_message,
             })
             return typing.cast(str, result.cast_to(types, types, stream_types, False, __runtime__))
+    def GenerateReport(self, message_history: typing.List[str],
+        baml_options: BamlCallOptions = {},
+    ) -> types.Report:
+        # Check if on_tick is provided
+        if 'on_tick' in baml_options:
+            stream = self.stream.GenerateReport(message_history=message_history,
+                baml_options=baml_options)
+            return stream.get_final_response()
+        else:
+            # Original non-streaming code
+            result = self.__options.merge_options(baml_options).call_function_sync(function_name="GenerateReport", args={
+                "message_history": message_history,
+            })
+            return typing.cast(types.Report, result.cast_to(types, types, stream_types, False, __runtime__))
     def ImageDescription(self, image_b64: baml_py.Image,
         baml_options: BamlCallOptions = {},
     ) -> str:
@@ -182,6 +196,18 @@ class BamlStreamClient:
           lambda x: typing.cast(str, x.cast_to(types, types, stream_types, False, __runtime__)),
           ctx,
         )
+    def GenerateReport(self, message_history: typing.List[str],
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.BamlSyncStream[stream_types.Report, types.Report]:
+        ctx, result = self.__options.merge_options(baml_options).create_sync_stream(function_name="GenerateReport", args={
+            "message_history": message_history,
+        })
+        return baml_py.BamlSyncStream[stream_types.Report, types.Report](
+          result,
+          lambda x: typing.cast(stream_types.Report, x.cast_to(types, types, stream_types, True, __runtime__)),
+          lambda x: typing.cast(types.Report, x.cast_to(types, types, stream_types, False, __runtime__)),
+          ctx,
+        )
     def ImageDescription(self, image_b64: baml_py.Image,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.BamlSyncStream[str, str]:
@@ -245,6 +271,13 @@ class BamlHttpRequestClient:
             "message": message,"conversation_history": conversation_history,"sentiment": sentiment,"memory": memory,"escalate_message": escalate_message,
         }, mode="request")
         return result
+    def GenerateReport(self, message_history: typing.List[str],
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        result = self.__options.merge_options(baml_options).create_http_request_sync(function_name="GenerateReport", args={
+            "message_history": message_history,
+        }, mode="request")
+        return result
     def ImageDescription(self, image_b64: baml_py.Image,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
@@ -286,6 +319,13 @@ class BamlHttpStreamRequestClient:
     ) -> baml_py.baml_py.HTTPRequest:
         result = self.__options.merge_options(baml_options).create_http_request_sync(function_name="ChatReply", args={
             "message": message,"conversation_history": conversation_history,"sentiment": sentiment,"memory": memory,"escalate_message": escalate_message,
+        }, mode="stream")
+        return result
+    def GenerateReport(self, message_history: typing.List[str],
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        result = self.__options.merge_options(baml_options).create_http_request_sync(function_name="GenerateReport", args={
+            "message_history": message_history,
         }, mode="stream")
         return result
     def ImageDescription(self, image_b64: baml_py.Image,

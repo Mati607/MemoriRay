@@ -19,8 +19,16 @@ type_map = {
     "types.MemoriesStore": types.MemoriesStore,
     "stream_types.MemoriesStore": stream_types.MemoriesStore,
 
+    "types.Report": types.Report,
+    "stream_types.Report": stream_types.Report,
+
     "types.SelectMemoryResponse": types.SelectMemoryResponse,
     "stream_types.SelectMemoryResponse": stream_types.SelectMemoryResponse,
 
+    "types.Symptom": types.Symptom,
+    "stream_types.Symptom": stream_types.Symptom,
+
+
+    "types.RiskLevel": types.RiskLevel,
 
 }

@@ -20,18 +20,22 @@ from .globals import DO_NOT_USE_DIRECTLY_UNLESS_YOU_KNOW_WHAT_YOURE_DOING_RUNTIM
 class TypeBuilder(type_builder.TypeBuilder):
     def __init__(self):
         super().__init__(classes=set(
-          ["MemoriesStore","SelectMemoryResponse",]
+          ["MemoriesStore","Report","SelectMemoryResponse","Symptom",]
         ), enums=set(
-          []
+          ["RiskLevel",]
         ), runtime=DO_NOT_USE_DIRECTLY_UNLESS_YOU_KNOW_WHAT_YOURE_DOING_RUNTIME)
 
     # #########################################################################
-    # Generated enums 0
+    # Generated enums 1
     # #########################################################################
+
+    @property
+    def RiskLevel(self) -> "RiskLevelViewer":
+        return RiskLevelViewer(self)
 
 
     # #########################################################################
-    # Generated classes 2
+    # Generated classes 4
     # #########################################################################
 
     @property
@@ -39,18 +43,80 @@ class TypeBuilder(type_builder.TypeBuilder):
         return MemoriesStoreViewer(self)
 
     @property
+    def Report(self) -> "ReportViewer":
+        return ReportViewer(self)
+
+    @property
     def SelectMemoryResponse(self) -> "SelectMemoryResponseViewer":
         return SelectMemoryResponseViewer(self)
 
+    @property
+    def Symptom(self) -> "SymptomViewer":
+        return SymptomViewer(self)
+
 
 
 # #########################################################################
-# Generated enums 0
+# Generated enums 1
 # #########################################################################
 
+class RiskLevelAst:
+    def __init__(self, tb: type_builder.TypeBuilder):
+        _tb = tb._tb # type: ignore (we know how to use this private attribute)
+        self._bldr = _tb.enum("RiskLevel")
+        self._values: typing.Set[str] = set([  "NONE",  "LOW",  "MODERATE",  "HIGH",  "EMERGENCY",  ])
+        self._vals = RiskLevelValues(self._bldr, self._values)
+
+    def type(self) -> baml_py.FieldType:
+        return self._bldr.field()
+
+    @property
+    def values(self) -> "RiskLevelValues":
+        return self._vals
+
+
+class RiskLevelViewer(RiskLevelAst):
+    def __init__(self, tb: type_builder.TypeBuilder):
+        super().__init__(tb)
+
+    
+    def list_values(self) -> typing.List[typing.Tuple[str, type_builder.EnumValueViewer]]:
+        return [(name, type_builder.EnumValueViewer(self._bldr.value(name))) for name in self._values]
+    
+
+class RiskLevelValues:
+    def __init__(self, enum_bldr: baml_py.EnumBuilder, values: typing.Set[str]):
+        self.__bldr = enum_bldr
+        self.__values = values # type: ignore (we know how to use this private attribute) # noqa: F821
+
+    
+    
+    @property
+    def NONE(self) -> type_builder.EnumValueViewer:
+        return type_builder.EnumValueViewer(self.__bldr.value("NONE"))
+    
+    @property
+    def LOW(self) -> type_builder.EnumValueViewer:
+        return type_builder.EnumValueViewer(self.__bldr.value("LOW"))
+    
+    @property
+    def MODERATE(self) -> type_builder.EnumValueViewer:
+        return type_builder.EnumValueViewer(self.__bldr.value("MODERATE"))
+    
+    @property
+    def HIGH(self) -> type_builder.EnumValueViewer:
+        return type_builder.EnumValueViewer(self.__bldr.value("HIGH"))
+    
+    @property
+    def EMERGENCY(self) -> type_builder.EnumValueViewer:
+        return type_builder.EnumValueViewer(self.__bldr.value("EMERGENCY"))
+    
+    
+
+
 
 # #########################################################################
-# Generated classes 2
+# Generated classes 4
 # #########################################################################
 
 class MemoriesStoreAst:
@@ -96,6 +162,73 @@ class MemoriesStoreProperties:
     
 
 
+class ReportAst:
+    def __init__(self, tb: type_builder.TypeBuilder):
+        _tb = tb._tb # type: ignore (we know how to use this private attribute)
+        self._bldr = _tb.class_("Report")
+        self._properties: typing.Set[str] = set([  "overall_assessment",  "risk_level",  "key_concerns",  "symptoms",  "protective_factors",  "functional_impact",  "recommended_clinical_focus",  "limitations",  ])
+        self._props = ReportProperties(self._bldr, self._properties)
+
+    def type(self) -> baml_py.FieldType:
+        return self._bldr.field()
+
+    @property
+    def props(self) -> "ReportProperties":
+        return self._props
+
+
+class ReportViewer(ReportAst):
+    def __init__(self, tb: type_builder.TypeBuilder):
+        super().__init__(tb)
+
+    
+    def list_properties(self) -> typing.List[typing.Tuple[str, type_builder.ClassPropertyViewer]]:
+        return [(name, type_builder.ClassPropertyViewer(self._bldr.property(name))) for name in self._properties]
+    
+
+
+class ReportProperties:
+    def __init__(self, bldr: baml_py.ClassBuilder, properties: typing.Set[str]):
+        self.__bldr = bldr
+        self.__properties = properties # type: ignore (we know how to use this private attribute) # noqa: F821
+
+    
+    
+    @property
+    def overall_assessment(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("overall_assessment"))
+    
+    @property
+    def risk_level(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("risk_level"))
+    
+    @property
+    def key_concerns(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("key_concerns"))
+    
+    @property
+    def symptoms(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("symptoms"))
+    
+    @property
+    def protective_factors(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("protective_factors"))
+    
+    @property
+    def functional_impact(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("functional_impact"))
+    
+    @property
+    def recommended_clinical_focus(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("recommended_clinical_focus"))
+    
+    @property
+    def limitations(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("limitations"))
+    
+    
+
+
 class SelectMemoryResponseAst:
     def __init__(self, tb: type_builder.TypeBuilder):
         _tb = tb._tb # type: ignore (we know how to use this private attribute)
@@ -135,6 +268,53 @@ class SelectMemoryResponseProperties:
     @property
     def image_index_list(self) -> type_builder.ClassPropertyViewer:
         return type_builder.ClassPropertyViewer(self.__bldr.property("image_index_list"))
+    
+    
+
+
+class SymptomAst:
+    def __init__(self, tb: type_builder.TypeBuilder):
+        _tb = tb._tb # type: ignore (we know how to use this private attribute)
+        self._bldr = _tb.class_("Symptom")
+        self._properties: typing.Set[str] = set([  "name",  "description",  "evidence_from_messages",  ])
+        self._props = SymptomProperties(self._bldr, self._properties)
+
+    def type(self) -> baml_py.FieldType:
+        return self._bldr.field()
+
+    @property
+    def props(self) -> "SymptomProperties":
+        return self._props
+
+
+class SymptomViewer(SymptomAst):
+    def __init__(self, tb: type_builder.TypeBuilder):
+        super().__init__(tb)
+
+    
+    def list_properties(self) -> typing.List[typing.Tuple[str, type_builder.ClassPropertyViewer]]:
+        return [(name, type_builder.ClassPropertyViewer(self._bldr.property(name))) for name in self._properties]
+    
+
+
+class SymptomProperties:
+    def __init__(self, bldr: baml_py.ClassBuilder, properties: typing.Set[str]):
+        self.__bldr = bldr
+        self.__properties = properties # type: ignore (we know how to use this private attribute) # noqa: F821
+
+    
+    
+    @property
+    def name(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("name"))
+    
+    @property
+    def description(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("description"))
+    
+    @property
+    def evidence_from_messages(self) -> type_builder.ClassPropertyViewer:
+        return type_builder.ClassPropertyViewer(self.__bldr.property("evidence_from_messages"))
     
     
 

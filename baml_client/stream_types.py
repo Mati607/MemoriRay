@@ -23,16 +23,31 @@ class StreamState(BaseModel, typing.Generic[StreamStateValueT]):
     value: StreamStateValueT
     state: typing_extensions.Literal["Pending", "Incomplete", "Complete"]
 # #########################################################################
-# Generated classes (2)
+# Generated classes (4)
 # #########################################################################
 
 class MemoriesStore(BaseModel):
     description: typing.Optional[str] = None
     image_index: typing.Optional[int] = None
 
+class Report(BaseModel):
+    overall_assessment: typing.Optional[str] = None
+    risk_level: typing.Optional[types.RiskLevel] = None
+    key_concerns: typing.List[str]
+    symptoms: typing.List["Symptom"]
+    protective_factors: typing.List[str]
+    functional_impact: typing.Optional[str] = None
+    recommended_clinical_focus: typing.Optional[str] = None
+    limitations: typing.Optional[str] = None
+
 class SelectMemoryResponse(BaseModel):
     selected_memories_summary: typing.Optional[str] = None
     image_index_list: typing.List[int]
+
+class Symptom(BaseModel):
+    name: typing.Optional[str] = None
+    description: typing.Optional[str] = None
+    evidence_from_messages: typing.List[str]
 
 # #########################################################################
 # Generated type aliases (0)

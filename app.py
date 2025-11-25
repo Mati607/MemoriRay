@@ -6,6 +6,15 @@ import json
 
 import requests
 import streamlit as st
+from io import BytesIO
+import textwrap
+try:
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.pagesizes import letter
+except Exception:
+    # Report generation will surface a helpful error if dependency missing
+    canvas = None
+    letter = None
 
 HISTORY_PATH = os.path.join(os.path.dirname(__file__), "chat_history.json")
 
@@ -282,6 +291,48 @@ def call_get_trusted_contacts() -> List[str]:
             last_error = str(e)
     return []
 
+def call_generate_report() -> str:
+    base = os.getenv("CHAT_API_BASE", "http://127.0.0.1:8000").rstrip("/")
+    url = f"{base}/generate_report"
+    r = requests.post(url, timeout=120)
+    if not r.ok:
+        try:
+            detail = r.json().get("detail", r.text)
+        except Exception:
+            detail = r.text
+        raise RuntimeError(f"Report generation failed ({r.status_code}). {detail}")
+    data = r.json()
+    return data.get("reply", "") or ""
+
+def build_report_pdf(report_text: str) -> bytes:
+    if canvas is None or letter is None:
+        raise RuntimeError("PDF generation dependency missing. Please install 'reportlab'.")
+    buffer = BytesIO()
+    c = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+    margin = 72  # 1 inch
+    y = height - margin
+    c.setFont("Helvetica", 12)
+    # Basic word wrap
+    lines: List[str] = []
+    for paragraph in (report_text or "").splitlines():
+        if not paragraph.strip():
+            lines.append("")
+            continue
+        wrapped = textwrap.wrap(paragraph, width=90)
+        lines.extend(wrapped if wrapped else [""])
+    for line in lines:
+        if y < margin:
+            c.showPage()
+            c.setFont("Helvetica", 12)
+            y = height - margin
+        c.drawString(margin, y, line)
+        y -= 14
+    c.save()
+    pdf_bytes = buffer.getvalue()
+    buffer.close()
+    return pdf_bytes
+
 if "attach_uploader_key" not in st.session_state:
     st.session_state.attach_uploader_key = 0
 
@@ -339,17 +390,40 @@ with st.sidebar:
                 try:
                     resp = call_add_trusted_contact(emails)
                     st.success(resp or "Trusted contacts saved.")
-                    # Refresh list after saving
-                    try:
-                        _existing_contacts = call_get_trusted_contacts()
-                    except Exception:
-                        _existing_contacts = []
-                    if _existing_contacts:
-                        st.caption("Saved contacts:")
-                        for em in _existing_contacts:
-                            st.markdown(f"- {em}")
+                    time.sleep(1)
+                    st.rerun()
                 except Exception as e:
                     st.error(str(e))
+
+    st.divider()
+    st.markdown("**📄 Report**")
+    # Persist the last generated PDF for download across reruns
+    report_pdf_bytes = st.session_state.get("report_pdf_bytes")
+    report_filename = st.session_state.get("report_filename", "memori_report.pdf")
+    col_gen, col_dl = st.columns([1,1])
+    with col_gen:
+        if st.button("Generate Report (PDF)"):
+            try:
+                with st.spinner("Generating report…"):
+                    report_text = call_generate_report()
+                    if not report_text.strip():
+                        st.warning("No report content available.")
+                    else:
+                        pdf_bytes = build_report_pdf(report_text)
+                        st.session_state["report_pdf_bytes"] = pdf_bytes
+                        st.session_state["report_filename"] = report_filename
+                        st.success("Report ready below.")
+            except Exception as e:
+                st.error(str(e))
+    with col_dl:
+        if report_pdf_bytes:
+            st.download_button(
+                "⬇️ Download",
+                data=report_pdf_bytes,
+                file_name=report_filename,
+                mime="application/pdf",
+                use_container_width=True,
+            )
 
 prompt = st.chat_input("Share what's on your mind…")
 

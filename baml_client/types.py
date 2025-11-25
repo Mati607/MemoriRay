@@ -37,20 +37,42 @@ def get_checks(checks: typing.Dict[CheckName, Check]) -> typing.List[Check]:
 def all_succeeded(checks: typing.Dict[CheckName, Check]) -> bool:
     return all(check.status == "succeeded" for check in get_checks(checks))
 # #########################################################################
-# Generated enums (0)
+# Generated enums (1)
 # #########################################################################
 
+class RiskLevel(str, Enum):
+    NONE = "NONE"
+    LOW = "LOW"
+    MODERATE = "MODERATE"
+    HIGH = "HIGH"
+    EMERGENCY = "EMERGENCY"
+
 # #########################################################################
-# Generated classes (2)
+# Generated classes (4)
 # #########################################################################
 
 class MemoriesStore(BaseModel):
     description: str
     image_index: int
 
+class Report(BaseModel):
+    overall_assessment: str
+    risk_level: RiskLevel
+    key_concerns: typing.List[str]
+    symptoms: typing.List["Symptom"]
+    protective_factors: typing.List[str]
+    functional_impact: str
+    recommended_clinical_focus: str
+    limitations: str
+
 class SelectMemoryResponse(BaseModel):
     selected_memories_summary: str
     image_index_list: typing.List[int]
+
+class Symptom(BaseModel):
+    name: str
+    description: str
+    evidence_from_messages: typing.List[str]
 
 # #########################################################################
 # Generated type aliases (0)
