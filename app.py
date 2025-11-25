@@ -239,6 +239,49 @@ def call_add_memory(base_64_image: str) -> str:
     data = r.json()
     return data.get("reply", "") or ""
 
+def call_add_trusted_contact(emails: List[str]) -> str:
+    base = os.getenv("CHAT_API_BASE", "http://127.0.0.1:8000").rstrip("/")
+    # Try with and without leading slash since backend route may be defined without it
+    paths = ["/add_trusted_contact", "add_trusted_contact"]
+    payload = {"email_list": emails}
+    last_error = None
+    for path in paths:
+        url = f"{base}/{path.lstrip('/')}"
+        try:
+            r = requests.post(url, json=payload, timeout=60)
+            if r.ok:
+                data = r.json()
+                return data.get("reply", "") or "Trusted contacts updated."
+            last_error = f"{r.status_code} {r.text}"
+        except Exception as e:
+            last_error = str(e)
+    raise RuntimeError(f"Add trusted contacts failed. {last_error or ''}")
+
+def call_get_trusted_contacts() -> List[str]:
+    base = os.getenv("CHAT_API_BASE", "http://127.0.0.1:8000").rstrip("/")
+    paths = ["/get_trusted_contact", "get_trusted_contact"]
+    last_error = None
+    for path in paths:
+        url = f"{base}/{path.lstrip('/')}"
+        try:
+            r = requests.post(url, timeout=60)
+            if r.ok:
+                data = r.json()
+                reply = data.get("reply")
+                if isinstance(reply, list):
+                    return [str(x) for x in reply]
+                if isinstance(reply, str):
+                    try:
+                        parsed = json.loads(reply)
+                        if isinstance(parsed, list):
+                            return [str(x) for x in parsed]
+                    except Exception:
+                        return [reply]
+            last_error = f"{r.status_code} {r.text}"
+        except Exception as e:
+            last_error = str(e)
+    return []
+
 if "attach_uploader_key" not in st.session_state:
     st.session_state.attach_uploader_key = 0
 
@@ -268,6 +311,45 @@ with st.sidebar:
                         results.success(resp or f"{uf.name}: Memory added successfully")
                     except Exception as e:
                         results.error(f"{uf.name}: {e}")
+
+    st.divider()
+    st.markdown("**👥 Trusted Contacts**")
+    st.caption("People to reach out to if you're in crisis.")
+    # Display currently saved contacts
+    try:
+        _existing_contacts = call_get_trusted_contacts()
+    except Exception:
+        _existing_contacts = []
+    if _existing_contacts:
+        st.caption("Saved contacts:")
+        for em in _existing_contacts:
+            st.markdown(f"- {em}")
+    with st.form("trusted_contacts_form", border=True):
+        emails_input = st.text_input(
+            "Add Trusted Contact(s)",
+            placeholder="alice@example.com, bob@example.com",
+            help="Separate multiple emails with commas",
+        )
+        submitted_tc = st.form_submit_button("Save contacts")
+        if submitted_tc:
+            emails = [e.strip() for e in emails_input.split(",") if e.strip()]
+            if not emails:
+                st.warning("Please enter at least one valid email.")
+            else:
+                try:
+                    resp = call_add_trusted_contact(emails)
+                    st.success(resp or "Trusted contacts saved.")
+                    # Refresh list after saving
+                    try:
+                        _existing_contacts = call_get_trusted_contacts()
+                    except Exception:
+                        _existing_contacts = []
+                    if _existing_contacts:
+                        st.caption("Saved contacts:")
+                        for em in _existing_contacts:
+                            st.markdown(f"- {em}")
+                except Exception as e:
+                    st.error(str(e))
 
 prompt = st.chat_input("Share what's on your mind…")
 

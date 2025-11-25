@@ -1,3 +1,7 @@
+from pydantic.networks import EmailStr
+import json
+
+
 import os
 import base64
 from contextlib import asynccontextmanager
@@ -22,12 +26,12 @@ from baml_client import b as baml  # type: ignore
 import baml_py
 
 from fastapi.responses import HTMLResponse, Response
+from pydantic import EmailStr
 
 
 class ChatRequest(BaseModel):
     message: str
     model: Optional[str] = None
-
 
 class ChatResponse(BaseModel):
     reply: str
@@ -36,10 +40,15 @@ class ChatResponse(BaseModel):
 class AddMemoryRequest(BaseModel):
     base_64_image: Optional[str] = None
 
+class AddTrsutedContactRequest(BaseModel):
+    email_list: list[EmailStr]
+
 @dataclass
 class SelectedMemory:
     description: str
     images: list[str]
+
+contact_list = set()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -90,6 +99,12 @@ def health():
 
 msg_history : list[str] = []
 
+def email_contacts() -> str:
+    global contact_list
+    for email in contact_list:
+        print(f"Sending email to {email}")
+    return f"The issue has been escalated to the trusted contacts: {', '.join(contact_list)}."
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
     if not req.message or not req.message.strip():
@@ -99,7 +114,12 @@ async def chat(req: ChatRequest):
     selected_memory = await get_memory(req.message)
     memory_description = selected_memory.description
     image_list = selected_memory.images
-    reply_text = await baml.ChatReply(req.message, msg_history, sentiment, memory_description)
+    escalate = await baml.TrustedContact(req.message)
+    if escalate:
+        escalate_message = email_contacts()
+    else: 
+        escalate_message = "The issue is not critical enough to escalate to the trusted contacts."
+    reply_text = await baml.ChatReply(req.message, msg_history, sentiment, memory_description,escalate_message)
     msg_history.append(req.message + " -> " + reply_text)
     return ChatResponse(reply=reply_text, images=image_list)
 
@@ -145,6 +165,21 @@ async def add_memory(req: AddMemoryRequest):
     })
 
     return ChatResponse(reply=description)
+
+@app.post("/add_trusted_contact", response_model=ChatResponse)
+async def add_trusted_contact(req: AddTrsutedContactRequest):
+    global contact_list
+    if not req.email_list:
+        raise HTTPException(status_code=400, detail="email list is required.")
+    for email in req.email_list:
+        contact_list.add(email)
+    return ChatResponse(reply="trusted contact added successfully.")
+
+@app.post("/get_trusted_contact", response_model=ChatResponse)
+async def get_trusted_contact():
+    global contact_list
+    # Return as JSON string in 'reply' to satisfy ChatResponse schema
+    return ChatResponse(reply=json.dumps(list(contact_list)))
 
 async def get_memory(query: str) -> SelectedMemory:
     if not memory_descriptions:

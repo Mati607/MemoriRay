@@ -79,19 +79,19 @@ class BamlAsyncClient:
     def parse_stream(self):
       return self.__llm_stream_parser
     
-    async def ChatReply(self, message: str,conversation_history: typing.List[str],sentiment: str,memory: str,
+    async def ChatReply(self, message: str,conversation_history: typing.List[str],sentiment: str,memory: str,escalate_message: str,
         baml_options: BamlCallOptions = {},
     ) -> str:
         # Check if on_tick is provided
         if 'on_tick' in baml_options:
             # Use streaming internally when on_tick is provided
-            stream = self.stream.ChatReply(message=message,conversation_history=conversation_history,sentiment=sentiment,memory=memory,
+            stream = self.stream.ChatReply(message=message,conversation_history=conversation_history,sentiment=sentiment,memory=memory,escalate_message=escalate_message,
                 baml_options=baml_options)
             return await stream.get_final_response()
         else:
             # Original non-streaming code
             result = await self.__options.merge_options(baml_options).call_function_async(function_name="ChatReply", args={
-                "message": message,"conversation_history": conversation_history,"sentiment": sentiment,"memory": memory,
+                "message": message,"conversation_history": conversation_history,"sentiment": sentiment,"memory": memory,"escalate_message": escalate_message,
             })
             return typing.cast(str, result.cast_to(types, types, stream_types, False, __runtime__))
     async def ImageDescription(self, image_b64: baml_py.Image,
@@ -139,6 +139,21 @@ class BamlAsyncClient:
                 "user_message": user_message,
             })
             return typing.cast(str, result.cast_to(types, types, stream_types, False, __runtime__))
+    async def TrustedContact(self, query: str,
+        baml_options: BamlCallOptions = {},
+    ) -> bool:
+        # Check if on_tick is provided
+        if 'on_tick' in baml_options:
+            # Use streaming internally when on_tick is provided
+            stream = self.stream.TrustedContact(query=query,
+                baml_options=baml_options)
+            return await stream.get_final_response()
+        else:
+            # Original non-streaming code
+            result = await self.__options.merge_options(baml_options).call_function_async(function_name="TrustedContact", args={
+                "query": query,
+            })
+            return typing.cast(bool, result.cast_to(types, types, stream_types, False, __runtime__))
     
 
 
@@ -148,11 +163,11 @@ class BamlStreamClient:
     def __init__(self, options: DoNotUseDirectlyCallManager):
         self.__options = options
 
-    def ChatReply(self, message: str,conversation_history: typing.List[str],sentiment: str,memory: str,
+    def ChatReply(self, message: str,conversation_history: typing.List[str],sentiment: str,memory: str,escalate_message: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.BamlStream[str, str]:
         ctx, result = self.__options.merge_options(baml_options).create_async_stream(function_name="ChatReply", args={
-            "message": message,"conversation_history": conversation_history,"sentiment": sentiment,"memory": memory,
+            "message": message,"conversation_history": conversation_history,"sentiment": sentiment,"memory": memory,"escalate_message": escalate_message,
         })
         return baml_py.BamlStream[str, str](
           result,
@@ -196,6 +211,18 @@ class BamlStreamClient:
           lambda x: typing.cast(str, x.cast_to(types, types, stream_types, False, __runtime__)),
           ctx,
         )
+    def TrustedContact(self, query: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.BamlStream[bool, bool]:
+        ctx, result = self.__options.merge_options(baml_options).create_async_stream(function_name="TrustedContact", args={
+            "query": query,
+        })
+        return baml_py.BamlStream[bool, bool](
+          result,
+          lambda x: typing.cast(bool, x.cast_to(types, types, stream_types, True, __runtime__)),
+          lambda x: typing.cast(bool, x.cast_to(types, types, stream_types, False, __runtime__)),
+          ctx,
+        )
     
 
 class BamlHttpRequestClient:
@@ -204,11 +231,11 @@ class BamlHttpRequestClient:
     def __init__(self, options: DoNotUseDirectlyCallManager):
         self.__options = options
 
-    async def ChatReply(self, message: str,conversation_history: typing.List[str],sentiment: str,memory: str,
+    async def ChatReply(self, message: str,conversation_history: typing.List[str],sentiment: str,memory: str,escalate_message: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
         result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="ChatReply", args={
-            "message": message,"conversation_history": conversation_history,"sentiment": sentiment,"memory": memory,
+            "message": message,"conversation_history": conversation_history,"sentiment": sentiment,"memory": memory,"escalate_message": escalate_message,
         }, mode="request")
         return result
     async def ImageDescription(self, image_b64: baml_py.Image,
@@ -230,6 +257,13 @@ class BamlHttpRequestClient:
     ) -> baml_py.baml_py.HTTPRequest:
         result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="SentimentAnalysis", args={
             "user_message": user_message,
+        }, mode="request")
+        return result
+    async def TrustedContact(self, query: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="TrustedContact", args={
+            "query": query,
         }, mode="request")
         return result
     
@@ -240,11 +274,11 @@ class BamlHttpStreamRequestClient:
     def __init__(self, options: DoNotUseDirectlyCallManager):
         self.__options = options
 
-    async def ChatReply(self, message: str,conversation_history: typing.List[str],sentiment: str,memory: str,
+    async def ChatReply(self, message: str,conversation_history: typing.List[str],sentiment: str,memory: str,escalate_message: str,
         baml_options: BamlCallOptions = {},
     ) -> baml_py.baml_py.HTTPRequest:
         result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="ChatReply", args={
-            "message": message,"conversation_history": conversation_history,"sentiment": sentiment,"memory": memory,
+            "message": message,"conversation_history": conversation_history,"sentiment": sentiment,"memory": memory,"escalate_message": escalate_message,
         }, mode="stream")
         return result
     async def ImageDescription(self, image_b64: baml_py.Image,
@@ -266,6 +300,13 @@ class BamlHttpStreamRequestClient:
     ) -> baml_py.baml_py.HTTPRequest:
         result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="SentimentAnalysis", args={
             "user_message": user_message,
+        }, mode="stream")
+        return result
+    async def TrustedContact(self, query: str,
+        baml_options: BamlCallOptions = {},
+    ) -> baml_py.baml_py.HTTPRequest:
+        result = await self.__options.merge_options(baml_options).create_http_request_async(function_name="TrustedContact", args={
+            "query": query,
         }, mode="stream")
         return result
     
