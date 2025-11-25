@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 import importlib.util
 from dataclasses import dataclass
+from typing import List, Dict
 
 if importlib.util.find_spec("baml_client") is None:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -47,6 +48,27 @@ class AddTrsutedContactRequest(BaseModel):
 class SelectedMemory:
     description: str
     images: list[str]
+
+# ------------------------------
+# Tailored Pydantic models for structured clinical report
+# ------------------------------
+class SymptomOut(BaseModel):
+    name: str
+    description: str
+    evidence_from_messages: List[str]
+
+class ClinicalReport(BaseModel):
+    overall_assessment: str
+    risk_level: str  # string enum: NONE | LOW | MODERATE | HIGH | EMERGENCY
+    key_concerns: List[str]
+    symptoms: List[SymptomOut]
+    protective_factors: List[str]
+    functional_impact: str
+    recommended_clinical_focus: str
+    limitations: str
+
+class GenerateReportResponse(BaseModel):
+    report: ClinicalReport
 
 contact_list = set()
 
@@ -202,3 +224,36 @@ async def generate_report():
     report = await baml.GenerateReport(msg_history)
     # Serialize the Report pydantic model to JSON string to satisfy ChatResponse schema
     return ChatResponse(reply=report.model_dump_json(indent=2))
+
+@app.post("/generate_report_structured", response_model=GenerateReportResponse)
+async def generate_report_structured():
+    """
+    Returns a structured clinical report with clear fields, decoupled from generated BAML models.
+    """
+    global msg_history
+    report = await baml.GenerateReport(msg_history)
+    # Map baml Client Report -> ClinicalReport
+    symptoms_out: List[SymptomOut] = []
+    try:
+        for s in getattr(report, "symptoms", []) or []:
+            symptoms_out.append(
+                SymptomOut(
+                    name=getattr(s, "name", "") or "",
+                    description=getattr(s, "description", "") or "",
+                    evidence_from_messages=getattr(s, "evidence_from_messages", []) or [],
+                )
+            )
+    except Exception:
+        symptoms_out = []
+
+    clinical = ClinicalReport(
+        overall_assessment=getattr(report, "overall_assessment", "") or "",
+        risk_level=str(getattr(getattr(report, "risk_level", ""), "value", getattr(report, "risk_level", "") or "")),
+        key_concerns=getattr(report, "key_concerns", []) or [],
+        symptoms=symptoms_out,
+        protective_factors=getattr(report, "protective_factors", []) or [],
+        functional_impact=getattr(report, "functional_impact", "") or "",
+        recommended_clinical_focus=getattr(report, "recommended_clinical_focus", "") or "",
+        limitations=getattr(report, "limitations", "") or "",
+    )
+    return GenerateReportResponse(report=clinical)
