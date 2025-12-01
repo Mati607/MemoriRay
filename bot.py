@@ -1,5 +1,7 @@
 from pydantic.networks import EmailStr
 import json
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail
 
 
 import os
@@ -41,7 +43,7 @@ class ChatResponse(BaseModel):
 class AddMemoryRequest(BaseModel):
     base_64_image: Optional[str] = None
 
-class AddTrsutedContactRequest(BaseModel):
+class AddTrustedContactRequest(BaseModel):
     email_list: list[EmailStr]
 
 @dataclass
@@ -121,12 +123,51 @@ def health():
 
 msg_history : list[str] = []
 
+
 def email_contacts() -> str:
     global contact_list
-    for email in contact_list:
-        print(f"Sending email to {email}")
-    return f"The issue has been escalated to the trusted contacts: {', '.join(contact_list)}."
-
+    
+    if not contact_list:
+        return "No trusted contacts configured."
+    
+    # Get SendGrid API key from environment
+    api_key = os.getenv("SENDGRID_API_KEY")
+    if not api_key:
+        print("Warning: SENDGRID_API_KEY not set. Emails not sent.")
+        return f"Alert would be sent to: {', '.join(contact_list)}"
+    
+    try:
+        sg = SendGridAPIClient(api_key)
+        
+        for email in contact_list:
+            message = Mail(
+                from_email=os.getenv("SENDER_EMAIL", "noreply@memoriray.app"),
+                to_emails=email,
+                subject="MEMORIRAY Alert - Urgent: Check on Your Loved One",
+                html_content=f"""
+                <html>
+                <body style="font-family: system-ui; padding: 20px;">
+                    <h2 style="color: #ef4444;">🚨 Crisis Alert from MEMORIRAY</h2>
+                    <p>Someone you care about may need immediate support.</p>
+                    <p>They have indicated they are experiencing distress and may be at risk.</p>
+                    <p><strong>Please reach out to them as soon as possible.</strong></p>
+                    <hr>
+                    <p style="color: #666; font-size: 12px;">
+                        If you believe they are in immediate danger, please contact emergency services (911 in the US).
+                    </p>
+                </body>
+                </html>
+                """
+            )
+            
+            response = sg.send(message)
+            print(f"Email sent to {email}: Status {response.status_code}")
+        
+        return f"Emergency alert sent to {len(contact_list)} trusted contact(s)."
+        
+    except Exception as e:
+        print(f"Error sending emails: {e}")
+        return f"Failed to send alerts. Please contact your trusted contacts directly."
 @app.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
     if not req.message or not req.message.strip():
@@ -189,7 +230,7 @@ async def add_memory(req: AddMemoryRequest):
     return ChatResponse(reply=description)
 
 @app.post("/add_trusted_contact", response_model=ChatResponse)
-async def add_trusted_contact(req: AddTrsutedContactRequest):
+async def add_trusted_contact(req: AddTrustedContactRequest):  # Fix parameter type
     global contact_list
     if not req.email_list:
         raise HTTPException(status_code=400, detail="email list is required.")
