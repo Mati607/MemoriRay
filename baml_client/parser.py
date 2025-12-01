@@ -30,6 +30,12 @@ class LlmResponseParser:
         result = self.__options.merge_options(baml_options).parse_response(function_name="ChatReply", llm_response=llm_response, mode="request")
         return typing.cast(str, result)
 
+    def GenerateReport(
+        self, llm_response: str, baml_options: BamlCallOptions = {},
+    ) -> types.Report:
+        result = self.__options.merge_options(baml_options).parse_response(function_name="GenerateReport", llm_response=llm_response, mode="request")
+        return typing.cast(types.Report, result)
+
     def ImageDescription(
         self, llm_response: str, baml_options: BamlCallOptions = {},
     ) -> str:
@@ -48,6 +54,12 @@ class LlmResponseParser:
         result = self.__options.merge_options(baml_options).parse_response(function_name="SentimentAnalysis", llm_response=llm_response, mode="request")
         return typing.cast(str, result)
 
+    def TrustedContact(
+        self, llm_response: str, baml_options: BamlCallOptions = {},
+    ) -> bool:
+        result = self.__options.merge_options(baml_options).parse_response(function_name="TrustedContact", llm_response=llm_response, mode="request")
+        return typing.cast(bool, result)
+
     
 
 class LlmStreamParser:
@@ -61,6 +73,12 @@ class LlmStreamParser:
     ) -> str:
         result = self.__options.merge_options(baml_options).parse_response(function_name="ChatReply", llm_response=llm_response, mode="stream")
         return typing.cast(str, result)
+
+    def GenerateReport(
+        self, llm_response: str, baml_options: BamlCallOptions = {},
+    ) -> stream_types.Report:
+        result = self.__options.merge_options(baml_options).parse_response(function_name="GenerateReport", llm_response=llm_response, mode="stream")
+        return typing.cast(stream_types.Report, result)
 
     def ImageDescription(
         self, llm_response: str, baml_options: BamlCallOptions = {},
@@ -79,5 +97,11 @@ class LlmStreamParser:
     ) -> str:
         result = self.__options.merge_options(baml_options).parse_response(function_name="SentimentAnalysis", llm_response=llm_response, mode="stream")
         return typing.cast(str, result)
+
+    def TrustedContact(
+        self, llm_response: str, baml_options: BamlCallOptions = {},
+    ) -> bool:
+        result = self.__options.merge_options(baml_options).parse_response(function_name="TrustedContact", llm_response=llm_response, mode="stream")
+        return typing.cast(bool, result)
 
     

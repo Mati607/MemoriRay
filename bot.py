@@ -1,3 +1,7 @@
+from pydantic.networks import EmailStr
+import json
+
+
 import os
 import base64
 from contextlib import asynccontextmanager
@@ -14,6 +18,7 @@ import sys
 from pathlib import Path
 import importlib.util
 from dataclasses import dataclass
+from typing import List, Dict
 
 if importlib.util.find_spec("baml_client") is None:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -22,12 +27,12 @@ from baml_client import b as baml  # type: ignore
 import baml_py
 
 from fastapi.responses import HTMLResponse, Response
+from pydantic import EmailStr
 
 
 class ChatRequest(BaseModel):
     message: str
     model: Optional[str] = None
-
 
 class ChatResponse(BaseModel):
     reply: str
@@ -36,10 +41,36 @@ class ChatResponse(BaseModel):
 class AddMemoryRequest(BaseModel):
     base_64_image: Optional[str] = None
 
+class AddTrsutedContactRequest(BaseModel):
+    email_list: list[EmailStr]
+
 @dataclass
 class SelectedMemory:
     description: str
     images: list[str]
+
+# ------------------------------
+# Tailored Pydantic models for structured clinical report
+# ------------------------------
+class SymptomOut(BaseModel):
+    name: str
+    description: str
+    evidence_from_messages: List[str]
+
+class ClinicalReport(BaseModel):
+    overall_assessment: str
+    risk_level: str  # string enum: NONE | LOW | MODERATE | HIGH | EMERGENCY
+    key_concerns: List[str]
+    symptoms: List[SymptomOut]
+    protective_factors: List[str]
+    functional_impact: str
+    recommended_clinical_focus: str
+    limitations: str
+
+class GenerateReportResponse(BaseModel):
+    report: ClinicalReport
+
+contact_list = set()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -90,6 +121,12 @@ def health():
 
 msg_history : list[str] = []
 
+def email_contacts() -> str:
+    global contact_list
+    for email in contact_list:
+        print(f"Sending email to {email}")
+    return f"The issue has been escalated to the trusted contacts: {', '.join(contact_list)}."
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
     if not req.message or not req.message.strip():
@@ -99,7 +136,12 @@ async def chat(req: ChatRequest):
     selected_memory = await get_memory(req.message)
     memory_description = selected_memory.description
     image_list = selected_memory.images
-    reply_text = await baml.ChatReply(req.message, msg_history, sentiment, memory_description)
+    escalate = await baml.TrustedContact(req.message)
+    if escalate:
+        escalate_message = email_contacts()
+    else: 
+        escalate_message = "The issue is not critical enough to escalate to the trusted contacts."
+    reply_text = await baml.ChatReply(req.message, msg_history, sentiment, memory_description,escalate_message)
     msg_history.append(req.message + " -> " + reply_text)
     return ChatResponse(reply=reply_text, images=image_list)
 
@@ -146,6 +188,21 @@ async def add_memory(req: AddMemoryRequest):
 
     return ChatResponse(reply=description)
 
+@app.post("/add_trusted_contact", response_model=ChatResponse)
+async def add_trusted_contact(req: AddTrsutedContactRequest):
+    global contact_list
+    if not req.email_list:
+        raise HTTPException(status_code=400, detail="email list is required.")
+    for email in req.email_list:
+        contact_list.add(email)
+    return ChatResponse(reply="trusted contact added successfully.")
+
+@app.post("/get_trusted_contact", response_model=ChatResponse)
+async def get_trusted_contact():
+    global contact_list
+    # Return as JSON string in 'reply' to satisfy ChatResponse schema
+    return ChatResponse(reply=json.dumps(list(contact_list)))
+
 async def get_memory(query: str) -> SelectedMemory:
     if not memory_descriptions:
         return SelectedMemory("", [])
@@ -160,3 +217,43 @@ async def get_memory(query: str) -> SelectedMemory:
         if isinstance(idx, int) and 0 <= idx < len(images_store)
     ]
     return SelectedMemory(description, image_list)
+    
+@app.post("/generate_report",response_model=ChatResponse)
+async def generate_report():
+    global msg_history
+    report = await baml.GenerateReport(msg_history)
+    # Serialize the Report pydantic model to JSON string to satisfy ChatResponse schema
+    return ChatResponse(reply=report.model_dump_json(indent=2))
+
+@app.post("/generate_report_structured", response_model=GenerateReportResponse)
+async def generate_report_structured():
+    """
+    Returns a structured clinical report with clear fields, decoupled from generated BAML models.
+    """
+    global msg_history
+    report = await baml.GenerateReport(msg_history)
+    # Map baml Client Report -> ClinicalReport
+    symptoms_out: List[SymptomOut] = []
+    try:
+        for s in getattr(report, "symptoms", []) or []:
+            symptoms_out.append(
+                SymptomOut(
+                    name=getattr(s, "name", "") or "",
+                    description=getattr(s, "description", "") or "",
+                    evidence_from_messages=getattr(s, "evidence_from_messages", []) or [],
+                )
+            )
+    except Exception:
+        symptoms_out = []
+
+    clinical = ClinicalReport(
+        overall_assessment=getattr(report, "overall_assessment", "") or "",
+        risk_level=str(getattr(getattr(report, "risk_level", ""), "value", getattr(report, "risk_level", "") or "")),
+        key_concerns=getattr(report, "key_concerns", []) or [],
+        symptoms=symptoms_out,
+        protective_factors=getattr(report, "protective_factors", []) or [],
+        functional_impact=getattr(report, "functional_impact", "") or "",
+        recommended_clinical_focus=getattr(report, "recommended_clinical_focus", "") or "",
+        limitations=getattr(report, "limitations", "") or "",
+    )
+    return GenerateReportResponse(report=clinical)
