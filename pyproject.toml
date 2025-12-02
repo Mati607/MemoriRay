@@ -25,6 +25,8 @@ streamlit = "^1.50.0"
 baml-py = "^0.212.0"
 email-validator = "^2.2.0"
 reportlab = "^4.2.5"
+sendgrid = "^6.12.5"
+certifi = "^2025.11.12"
 
 [tool.poetry.scripts]
 memori-api = "runserver:main" 

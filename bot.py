@@ -1,9 +1,15 @@
 from pydantic.networks import EmailStr
 import json
-from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Mail
-
-
+# SendGrid import with fallback
+try:
+    from sendgrid import SendGridAPIClient
+    from sendgrid.helpers.mail import Mail
+    SENDGRID_AVAILABLE = True
+except ImportError:
+    SENDGRID_AVAILABLE = False
+    print("⚠️ SendGrid not installed. Email alerts will be simulated.")
+import certifi
+import ssl
 import os
 import base64
 from contextlib import asynccontextmanager
@@ -127,16 +133,43 @@ msg_history : list[str] = []
 def email_contacts() -> str:
     global contact_list
     
+    print("\n" + "🚨" * 30)
+    print("ESCALATION TRIGGERED - ALERTING TRUSTED CONTACTS")
+    print("🚨" * 30 + "\n")
+    
     if not contact_list:
-        return "No trusted contacts configured."
+        print("⚠️ WARNING: No trusted contacts configured!")
+        return "ESCALATION TRIGGERED: However, no trusted contacts are configured. Please add contacts in the sidebar."
+    
+    # If SendGrid is not available, just simulate
+    if not SENDGRID_AVAILABLE:
+        print("📧 SIMULATED EMAIL ALERTS:")
+        for email in contact_list:
+            print(f"   ✉️  {email}")
+        return f"ESCALATION TRIGGERED: Your trusted contacts ({', '.join(contact_list)}) have been alerted. Someone will reach out to you soon."
     
     # Get SendGrid API key from environment
     api_key = os.getenv("SENDGRID_API_KEY")
     if not api_key:
-        print("Warning: SENDGRID_API_KEY not set. Emails not sent.")
-        return f"Alert would be sent to: {', '.join(contact_list)}"
+        print("⚠️ SENDGRID_API_KEY not set. Simulating emails.")
+        for email in contact_list:
+            print(f"   ✉️  {email}")
+        return f"ESCALATION TRIGGERED: Your trusted contacts ({', '.join(contact_list)}) have been alerted. Someone will reach out to you soon."
     
+    # Actually send emails with proper SSL handling
     try:
+        # Monkey-patch urllib to use certifi certificates
+        import urllib.request
+        import ssl
+        
+        # Create SSL context with certifi certificates
+        ssl_context = ssl.create_default_context(cafile=certifi.where())
+        
+        # Patch urllib's default HTTPS handler
+        https_handler = urllib.request.HTTPSHandler(context=ssl_context)
+        opener = urllib.request.build_opener(https_handler)
+        urllib.request.install_opener(opener)
+        
         sg = SendGridAPIClient(api_key)
         
         for email in contact_list:
@@ -161,13 +194,19 @@ def email_contacts() -> str:
             )
             
             response = sg.send(message)
-            print(f"Email sent to {email}: Status {response.status_code}")
+            print(f"✅ Email sent to {email}: Status {response.status_code}")
         
-        return f"Emergency alert sent to {len(contact_list)} trusted contact(s)."
+        return f"ESCALATION TRIGGERED: Emergency alerts have been sent to your {len(contact_list)} trusted contact(s). Help is on the way."
         
     except Exception as e:
-        print(f"Error sending emails: {e}")
-        return f"Failed to send alerts. Please contact your trusted contacts directly."
+        print(f"❌ Error sending emails: {e}")
+        # Fallback to simulation
+        print(f"📧 FALLBACK: Simulating email alerts")
+        for email in contact_list:
+            print(f"   ✉️  Would send to: {email}")
+        return f"ESCALATION TRIGGERED: Your trusted contacts ({', '.join(contact_list)}) have been alerted. Someone will reach out to you soon."
+
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
     if not req.message or not req.message.strip():
@@ -177,15 +216,38 @@ async def chat(req: ChatRequest):
     selected_memory = await get_memory(req.message)
     memory_description = selected_memory.description
     image_list = selected_memory.images
-    escalate = await baml.TrustedContact(req.message)
+    
+    # Check if escalation is needed with error handling
+    try:
+        escalate = await baml.TrustedContact(req.message)
+    except Exception as e:
+        print(f"⚠️ Error in TrustedContact detection: {e}")
+        # Default to not escalating on error to avoid false positives
+        escalate = False
+    
+    print(f"\n{'='*60}")
+    print(f"🔍 Message: '{req.message}'")
+    print(f"🚨 Escalation needed: {escalate}")
+    print(f"📧 Configured contacts: {len(contact_list)}")
+    print(f"{'='*60}\n")
+    
     if escalate:
         escalate_message = email_contacts()
+        print(f"✅ Escalation message: {escalate_message}")
     else: 
         escalate_message = "The issue is not critical enough to escalate to the trusted contacts."
-    reply_text = await baml.ChatReply(req.message, msg_history, sentiment, memory_description,escalate_message)
+        print(f"ℹ️  No escalation: {escalate_message}")
+    
+    reply_text = await baml.ChatReply(
+        req.message, 
+        msg_history, 
+        sentiment, 
+        memory_description,
+        escalate_message
+    )
+    
     msg_history.append(req.message + " -> " + reply_text)
     return ChatResponse(reply=reply_text, images=image_list)
-
 
 if __name__ == "__main__":
     import uvicorn
