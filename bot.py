@@ -78,6 +78,27 @@ class ClinicalReport(BaseModel):
 class GenerateReportResponse(BaseModel):
     report: ClinicalReport
 
+
+class GenerateReportHtmlRequest(BaseModel):
+    report: ClinicalReport
+
+
+class GenerateReportHtmlResponse(BaseModel):
+    html: str
+
+
+def _strip_markdown_code_fence(text: str) -> str:
+    s = (text or "").strip()
+    if not s.startswith("```"):
+        return s
+    lines = s.splitlines()
+    if lines and lines[0].startswith("```"):
+        lines = lines[1:]
+    if lines and lines[-1].strip() == "```":
+        lines = lines[:-1]
+    return "\n".join(lines).strip()
+
+
 contact_list = set()
 
 @asynccontextmanager
@@ -360,3 +381,26 @@ async def generate_report_structured():
         limitations=getattr(report, "limitations", "") or "",
     )
     return GenerateReportResponse(report=clinical)
+
+
+@app.post("/generate_report_html", response_model=GenerateReportHtmlResponse)
+async def generate_report_html(req: GenerateReportHtmlRequest):
+    """
+    Uses BAML + LLM to render the structured clinical report as a standalone HTML document.
+    """
+    payload = json.dumps(req.report.model_dump(), ensure_ascii=False, indent=2)
+    try:
+        html_out = await baml.GenerateClinicalReportHtml(payload)
+    except Exception as e:
+        # baml_py raises BamlTimeoutError when the provider exceeds the client deadline (often 408).
+        if e.__class__.__name__ == "BamlTimeoutError":
+            raise HTTPException(
+                status_code=504,
+                detail=(
+                    "Building the styled HTML report timed out. Try again in a moment, "
+                    "or use a shorter chat before generating."
+                ),
+            ) from e
+        raise
+    html_out = _strip_markdown_code_fence(html_out or "")
+    return GenerateReportHtmlResponse(html=html_out)

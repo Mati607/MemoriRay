@@ -1,4 +1,5 @@
 import os
+import re
 import base64
 import time
 from typing import Dict, Any, List
@@ -6,6 +7,7 @@ import json
 
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 from io import BytesIO
 import textwrap
 try:
@@ -191,6 +193,9 @@ col_clear, col_export = st.columns([1,1])
 with col_clear:
     if st.button("🧹 Clear"):
         st.session_state.pop("messages", None)
+        st.session_state.pop("report_html", None)
+        st.session_state.pop("report_pdf_bytes", None)
+        st.session_state.pop("report_filename", None)
         try:
             if os.path.exists(HISTORY_PATH):
                 os.remove(HISTORY_PATH)
@@ -331,6 +336,93 @@ def call_generate_report_structured() -> Dict[str, Any]:
     if not isinstance(data, dict) or "report" not in data:
         raise RuntimeError("Malformed structured report response.")
     return data["report"]
+
+
+def clinical_report_json_for_styled_html(report: Dict[str, Any]) -> str:
+    """
+    Serialize the same structured clinical report used for PDFs into JSON for the
+    HTML-styling LLM (BAML GenerateClinicalReportHtml).
+    """
+    return json.dumps(report, ensure_ascii=False, indent=2)
+
+
+def normalize_llm_html_document(raw: str) -> str:
+    """Remove optional markdown fences the model may wrap around the HTML."""
+    s = (raw or "").strip()
+    if not s.startswith("```"):
+        return s
+    s = re.sub(r"^```(?:html|HTML)?\s*", "", s)
+    s = re.sub(r"\s*```\s*$", "", s)
+    return s.strip()
+
+
+def call_generate_report_html(report: Dict[str, Any]) -> str:
+    """Ask the API (BAML-backed) to produce a self-contained styled HTML document."""
+    base = os.getenv("CHAT_API_BASE", "http://127.0.0.1:8000").rstrip("/")
+    url = f"{base}/generate_report_html"
+    r = requests.post(
+        url,
+        json={"report": report},
+        timeout=180,
+    )
+    if not r.ok:
+        try:
+            detail = r.json().get("detail", r.text)
+        except Exception:
+            detail = r.text
+        raise RuntimeError(f"HTML report generation failed ({r.status_code}). {detail}")
+    data = r.json() or {}
+    html = data.get("html", "")
+    if not isinstance(html, str) or not html.strip():
+        raise RuntimeError("Malformed HTML report response.")
+    return normalize_llm_html_document(html)
+
+
+def render_report_open_in_new_tab(html_document: str, *, component_key: str) -> None:
+    """Opens the report in a new browser tab via Blob URL (works for larger documents than data: links)."""
+    safe_id = re.sub(r"[^a-zA-Z0-9_]", "_", component_key) or "mr_report"
+    b64 = base64.standard_b64encode(html_document.encode("utf-8")).decode("ascii")
+    safe_b64 = json.dumps(b64)
+    components.html(
+        f"""
+        <div style="font-family: system-ui, -apple-system, sans-serif; box-sizing:border-box;
+          margin:0; padding:10px 10px 14px 10px; min-height:52px;
+          border:1px solid rgba(63,61,46,.18); border-radius:12px;
+          background:linear-gradient(180deg, rgba(255,253,244,.95), rgba(255,248,220,.6));
+          box-shadow:inset 0 1px 0 rgba(255,255,255,.6);">
+          <button type="button" id="mrOpen_{safe_id}"
+            style="width:100%; box-sizing:border-box; cursor:pointer; border-radius:10px;
+            border:1px solid rgba(63,61,46,.22); padding:0.6rem 0.95rem; font-size:0.95rem; font-weight:600;
+            background:linear-gradient(180deg,#fff9e6,#fff3cc); color:#3f3d2e;
+            box-shadow:0 2px 6px rgba(244,208,111,.22), 0 1px 0 rgba(255,255,255,.8) inset;">
+            View report in new tab
+          </button>
+        </div>
+        <script>
+        (function() {{
+          const b64 = {safe_b64};
+          const btn = document.getElementById("mrOpen_{safe_id}");
+          if (!btn) return;
+          btn.addEventListener("click", function () {{
+            try {{
+              const bin = atob(b64);
+              const bytes = new Uint8Array(bin.length);
+              for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+              const blob = new Blob([bytes], {{ type: "text/html;charset=utf-8" }});
+              const url = URL.createObjectURL(blob);
+              window.open(url, "_blank", "noopener,noreferrer");
+              setTimeout(function () {{ URL.revokeObjectURL(url); }}, 120000);
+            }} catch (e) {{
+              console.error(e);
+              alert("Could not open the report in a new tab.");
+            }}
+          }});
+        }})();
+        </script>
+        """,
+        height=96,
+    )
+
 
 def build_report_pdf(report_text: str) -> bytes:
     if canvas is None or letter is None:
@@ -575,45 +667,52 @@ with st.sidebar:
 
     st.divider()
     st.markdown("**📄 Report**")
-    # Persist the last generated PDF for download across reruns
-    report_pdf_bytes = st.session_state.get("report_pdf_bytes")
-    report_filename = st.session_state.get("report_filename", "memori_report.pdf")
-    col_gen, col_dl = st.columns([1,1])
+    st.caption(
+        "Creates an AI-styled, self-contained HTML summary (same clinical content as before). "
+        "Use **View report** to open it in a new tab."
+    )
+    col_gen, col_view = st.columns([1, 1])
     with col_gen:
-        if st.button("Generate Report (PDF)"):
+        if st.button("Generate report"):
             try:
-                with st.spinner("Generating report…"):
-                    pdf_bytes: bytes | None = None
+                with st.spinner("Summarizing conversation and designing HTML report…"):
+                    structured: Dict[str, Any] | None = None
                     try:
                         structured = call_generate_report_structured()
-                        if structured and isinstance(structured, dict):
-                            pdf_bytes = build_structured_report_pdf(structured)
-                            # Create filename hint with risk level if present
-                            rl = str(structured.get("risk_level") or "").upper()
-                            if rl:
-                                st.session_state["report_filename"] = f"memori_report_{rl.lower()}.pdf"
                     except Exception:
-                        # Fallback to text-only version if structured endpoint fails
+                        structured = None
+                    if not structured:
                         report_text = call_generate_report()
-                        if report_text.strip():
-                            pdf_bytes = build_report_pdf(report_text)
-                    if not pdf_bytes:
-                        st.warning("No report content available.")
-                    else:
-                        st.session_state["report_pdf_bytes"] = pdf_bytes
-                        st.session_state["report_filename"] = st.session_state.get("report_filename", report_filename)
-                        st.success("Report ready below.")
+                        if not (report_text or "").strip():
+                            st.warning("No report content available.")
+                        else:
+                            structured = {
+                                "overall_assessment": report_text,
+                                "risk_level": "NONE",
+                                "key_concerns": [],
+                                "symptoms": [],
+                                "protective_factors": [],
+                                "functional_impact": "",
+                                "recommended_clinical_focus": "",
+                                "limitations": "",
+                            }
+                    if structured:
+                        payload = clinical_report_json_for_styled_html(structured)
+                        if not payload.strip():
+                            st.warning("No report content available.")
+                        else:
+                            html_doc = call_generate_report_html(structured)
+                            st.session_state["report_html"] = html_doc
+                            st.session_state.pop("report_pdf_bytes", None)
+                            st.session_state.pop("report_filename", None)
+                            st.success("Report ready — click **View report**.")
             except Exception as e:
                 st.error(str(e))
-    with col_dl:
-        if report_pdf_bytes:
-            st.download_button(
-                "⬇️ Download",
-                data=report_pdf_bytes,
-                file_name=report_filename,
-                mime="application/pdf",
-                use_container_width=True,
-            )
+    with col_view:
+        html_for_view = st.session_state.get("report_html")
+        if html_for_view:
+            st.caption("Opens in a **new tab** (allow pop-ups if the browser blocks them).")
+            render_report_open_in_new_tab(html_for_view, component_key="memori_report_html")
 
 prompt = st.chat_input("Share what's on your mind…")
 
