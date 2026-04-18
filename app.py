@@ -31,12 +31,16 @@ except Exception:
     getSampleStyleSheet = None
     ParagraphStyle = None
 
-HISTORY_PATH = os.path.join(os.path.dirname(__file__), "chat_history.json")
+HISTORY_DIR = os.path.dirname(__file__)
 
-def load_saved_messages() -> List[Dict[str, Any]]:
+def _history_path(user_id: int) -> str:
+    return os.path.join(HISTORY_DIR, f"chat_history_{user_id}.json")
+
+def load_saved_messages(user_id: int) -> List[Dict[str, Any]]:
     try:
-        if os.path.exists(HISTORY_PATH):
-            with open(HISTORY_PATH, "r", encoding="utf-8") as f:
+        path = _history_path(user_id)
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 if isinstance(data, list):
                     return [m for m in data if isinstance(m, dict) and "role" in m and "content" in m]
@@ -44,15 +48,15 @@ def load_saved_messages() -> List[Dict[str, Any]]:
         pass
     return []
 
-def save_messages(messages: List[Dict[str, Any]]) -> None:
+def save_messages(user_id: int, messages: List[Dict[str, Any]]) -> None:
     try:
-        with open(HISTORY_PATH, "w", encoding="utf-8") as f:
+        with open(_history_path(user_id), "w", encoding="utf-8") as f:
             json.dump(messages, f, ensure_ascii=False, indent=2)
     except Exception:
         pass
 
 st.set_page_config(
-    page_title="MEMORIRAY · Mental Health Chat",
+    page_title="MEMORIRAY - Mental Health Chat",
     page_icon="🌤️",
     layout="centered",
     initial_sidebar_state="collapsed",
@@ -172,79 +176,56 @@ st.markdown(
         border-radius: 999px; border: 2px solid #fff2b8;
       }
       ::-webkit-scrollbar-track { background: #FFF7D6; }
+
+      /* Auth form styling */
+      .auth-container {
+        max-width: 400px;
+        margin: 2rem auto;
+        padding: 2rem;
+        background: var(--mh-card);
+        border: 1px solid var(--mh-border);
+        border-radius: 18px;
+        box-shadow: 0 4px 14px rgba(0,0,0,.04);
+      }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-st.markdown(
-    """
-    <div class="hero">
-      <div class="logo"></div>
-      <div class="app-title">MEMORIRAY · Mental Health Chat</div>
-    </div>
-    <div class="subtle">A gentle space to reflect, feel, and be heard.</div>
-    """,
-    unsafe_allow_html=True,
-)
-st.divider()
+# ─── Helper: get API base URL ───
+def _api_base() -> str:
+    return os.getenv("CHAT_API_BASE", "http://127.0.0.1:8000").rstrip("/")
 
-col_clear, col_export = st.columns([1,1])
-with col_clear:
-    if st.button("🧹 Clear"):
-        st.session_state.pop("messages", None)
-        st.session_state.pop("report_html", None)
-        st.session_state.pop("report_pdf_bytes", None)
-        st.session_state.pop("report_filename", None)
-        try:
-            if os.path.exists(HISTORY_PATH):
-                os.remove(HISTORY_PATH)
-        except Exception:
-            pass
-        st.rerun()
-with col_export:
-    download_ready = st.session_state.get("messages", [])
-    if download_ready:
-        transcript = ""
-        for m in download_ready:
-            role = "You" if m["role"] == "user" else "Guide"
-            transcript += f"{role}: {m['content']}\n"
-        st.download_button(
-            "⬇️ Export",
-            data=transcript.encode("utf-8"),
-            file_name="solace_chat.txt",
-            mime="text/plain",
-        )
+def _current_user_id() -> int:
+    return st.session_state["user_id"]
 
-if "messages" not in st.session_state:
-    saved = load_saved_messages()
-    if saved:
-        st.session_state.messages = saved
-    else:
-        st.session_state.messages = [
-            {
-                "role": "assistant",
-                "content": (
-                    "Hi—I'm here with a calm, supportive ear. "
-                    "How are you feeling right now? 🌱"
-                ),
-            }
-        ]
-
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
-
-def call_chat_api(message: str) -> Dict[str, Any]:
-    base = os.getenv("CHAT_API_BASE", "http://127.0.0.1:8000").rstrip("/")
-    url = f"{base}/chat"
-    payload = {"message": message}
-    r = requests.post(url, json=payload, timeout=60)
+# ─── Auth API helpers ───
+def call_register(username: str, password: str) -> Dict[str, Any]:
+    r = requests.post(f"{_api_base()}/register", json={"username": username, "password": password}, timeout=15)
     if not r.ok:
         try:
             detail = r.json().get("detail", r.text)
         except Exception:
             detail = r.text
+        raise RuntimeError(detail)
+    return r.json()
+
+def call_login(username: str, password: str) -> Dict[str, Any]:
+    r = requests.post(f"{_api_base()}/login", json={"username": username, "password": password}, timeout=15)
+    if not r.ok:
+        try:
+            detail = r.json().get("detail", r.text)
+        except Exception:
+            detail = r.text
+        raise RuntimeError(detail)
+    return r.json()
+
+# ─── Chat / memory / contact / report API helpers (all include user_id) ───
+def call_chat_api(message: str) -> Dict[str, Any]:
+    url = f"{_api_base()}/chat"
+    payload = {"message": message, "user_id": _current_user_id()}
+    r = requests.post(url, json=payload, timeout=60)
+    if not r.ok:
         raise RuntimeError(f"I'm having trouble connecting right now ({r.status_code}).")
     data = r.json()
     return {
@@ -253,9 +234,8 @@ def call_chat_api(message: str) -> Dict[str, Any]:
     }
 
 def call_add_memory(base_64_image: str) -> str:
-    base = os.getenv("CHAT_API_BASE", "http://127.0.0.1:8000").rstrip("/")
-    url = f"{base}/add_memory"
-    payload = {"base_64_image": base_64_image}
+    url = f"{_api_base()}/add_memory"
+    payload = {"base_64_image": base_64_image, "user_id": _current_user_id()}
     r = requests.post(url, json=payload, timeout=60)
     if not r.ok:
         try:
@@ -263,69 +243,51 @@ def call_add_memory(base_64_image: str) -> str:
         except Exception:
             detail = r.text
         raise RuntimeError(f"Upload failed ({r.status_code}). {detail}")
-    data = r.json()
-    return data.get("reply", "") or ""
+    return r.json().get("reply", "") or ""
 
 def call_add_trusted_contact(emails: List[str]) -> str:
-    base = os.getenv("CHAT_API_BASE", "http://127.0.0.1:8000").rstrip("/")
-    # Try with and without leading slash since backend route may be defined without it
-    paths = ["/add_trusted_contact", "add_trusted_contact"]
-    payload = {"email_list": emails}
-    last_error = None
-    for path in paths:
-        url = f"{base}/{path.lstrip('/')}"
-        try:
-            r = requests.post(url, json=payload, timeout=60)
-            if r.ok:
-                data = r.json()
-                return data.get("reply", "") or "Trusted contacts updated."
-            last_error = f"{r.status_code} {r.text}"
-        except Exception as e:
-            last_error = str(e)
-    raise RuntimeError(f"Add trusted contacts failed. {last_error or ''}")
+    url = f"{_api_base()}/add_trusted_contact"
+    payload = {"email_list": emails, "user_id": _current_user_id()}
+    r = requests.post(url, json=payload, timeout=60)
+    if r.ok:
+        return r.json().get("reply", "") or "Trusted contacts updated."
+    raise RuntimeError(f"Add trusted contacts failed. {r.status_code} {r.text}")
 
 def call_get_trusted_contacts() -> List[str]:
-    base = os.getenv("CHAT_API_BASE", "http://127.0.0.1:8000").rstrip("/")
-    paths = ["/get_trusted_contact", "get_trusted_contact"]
-    last_error = None
-    for path in paths:
-        url = f"{base}/{path.lstrip('/')}"
-        try:
-            r = requests.post(url, timeout=60)
-            if r.ok:
-                data = r.json()
-                reply = data.get("reply")
-                if isinstance(reply, list):
-                    return [str(x) for x in reply]
-                if isinstance(reply, str):
-                    try:
-                        parsed = json.loads(reply)
-                        if isinstance(parsed, list):
-                            return [str(x) for x in parsed]
-                    except Exception:
-                        return [reply]
-            last_error = f"{r.status_code} {r.text}"
-        except Exception as e:
-            last_error = str(e)
+    url = f"{_api_base()}/get_trusted_contact"
+    payload = {"user_id": _current_user_id()}
+    try:
+        r = requests.post(url, json=payload, timeout=60)
+        if r.ok:
+            data = r.json()
+            reply = data.get("reply")
+            if isinstance(reply, list):
+                return [str(x) for x in reply]
+            if isinstance(reply, str):
+                try:
+                    parsed = json.loads(reply)
+                    if isinstance(parsed, list):
+                        return [str(x) for x in parsed]
+                except Exception:
+                    return [reply]
+    except Exception:
+        pass
     return []
 
 def call_generate_report() -> str:
-    base = os.getenv("CHAT_API_BASE", "http://127.0.0.1:8000").rstrip("/")
-    url = f"{base}/generate_report"
-    r = requests.post(url, timeout=120)
+    url = f"{_api_base()}/generate_report"
+    r = requests.post(url, json={"user_id": _current_user_id()}, timeout=120)
     if not r.ok:
         try:
             detail = r.json().get("detail", r.text)
         except Exception:
             detail = r.text
         raise RuntimeError(f"Report generation failed ({r.status_code}). {detail}")
-    data = r.json()
-    return data.get("reply", "") or ""
+    return r.json().get("reply", "") or ""
 
 def call_generate_report_structured() -> Dict[str, Any]:
-    base = os.getenv("CHAT_API_BASE", "http://127.0.0.1:8000").rstrip("/")
-    url = f"{base}/generate_report_structured"
-    r = requests.post(url, timeout=120)
+    url = f"{_api_base()}/generate_report_structured"
+    r = requests.post(url, json={"user_id": _current_user_id()}, timeout=120)
     if not r.ok:
         try:
             detail = r.json().get("detail", r.text)
@@ -339,15 +301,10 @@ def call_generate_report_structured() -> Dict[str, Any]:
 
 
 def clinical_report_json_for_styled_html(report: Dict[str, Any]) -> str:
-    """
-    Serialize the same structured clinical report used for PDFs into JSON for the
-    HTML-styling LLM (BAML GenerateClinicalReportHtml).
-    """
     return json.dumps(report, ensure_ascii=False, indent=2)
 
 
 def normalize_llm_html_document(raw: str) -> str:
-    """Remove optional markdown fences the model may wrap around the HTML."""
     s = (raw or "").strip()
     if not s.startswith("```"):
         return s
@@ -357,14 +314,8 @@ def normalize_llm_html_document(raw: str) -> str:
 
 
 def call_generate_report_html(report: Dict[str, Any]) -> str:
-    """Ask the API (BAML-backed) to produce a self-contained styled HTML document."""
-    base = os.getenv("CHAT_API_BASE", "http://127.0.0.1:8000").rstrip("/")
-    url = f"{base}/generate_report_html"
-    r = requests.post(
-        url,
-        json={"report": report},
-        timeout=180,
-    )
+    url = f"{_api_base()}/generate_report_html"
+    r = requests.post(url, json={"report": report}, timeout=180)
     if not r.ok:
         try:
             detail = r.json().get("detail", r.text)
@@ -379,7 +330,6 @@ def call_generate_report_html(report: Dict[str, Any]) -> str:
 
 
 def render_report_open_in_new_tab(html_document: str, *, component_key: str) -> None:
-    """Opens the report in a new browser tab via Blob URL (works for larger documents than data: links)."""
     safe_id = re.sub(r"[^a-zA-Z0-9_]", "_", component_key) or "mr_report"
     b64 = base64.standard_b64encode(html_document.encode("utf-8")).decode("ascii")
     safe_b64 = json.dumps(b64)
@@ -433,7 +383,6 @@ def build_report_pdf(report_text: str) -> bytes:
     margin = 72  # 1 inch
     y = height - margin
     c.setFont("Helvetica", 12)
-    # Basic word wrap
     lines: List[str] = []
     for paragraph in (report_text or "").splitlines():
         if not paragraph.strip():
@@ -466,7 +415,6 @@ def build_structured_report_pdf(report: Dict[str, Any]) -> bytes:
         bottomMargin=56,
     )
     styles = getSampleStyleSheet()
-    # Custom styles
     title_style = ParagraphStyle(
         "TitleStyle",
         parent=styles["Title"],
@@ -510,11 +458,9 @@ def build_structured_report_pdf(report: Dict[str, Any]) -> bytes:
         return mapping.get((level or "").upper(), colors.HexColor("#3F3D2E"))
 
     story: list[Any] = []
-    # Title
     story.append(Paragraph("Clinical Summary Report", title_style))
     story.append(Spacer(1, 6))
 
-    # Risk badge
     rl = str(report.get("risk_level") or "").upper()
     risk_label = f"Risk Level: {rl or 'UNKNOWN'}"
     risk_bg = risk_color(rl)
@@ -530,23 +476,17 @@ def build_structured_report_pdf(report: Dict[str, Any]) -> bytes:
     story.append(risk_tbl)
     story.append(Spacer(1, 12))
 
-    # Overall assessment
     story.append(Paragraph("Overall Assessment", section_style))
-    story.append(Paragraph(report.get("overall_assessment", "") or "—", body_style))
+    story.append(Paragraph(report.get("overall_assessment", "") or "\u2014", body_style))
 
-    # Key concerns
     kc = report.get("key_concerns") or []
     if kc:
         story.append(Paragraph("Key Concerns", section_style))
         story.append(ListFlowable(
             [ListItem(Paragraph(str(item), body_style), leftIndent=6) for item in kc],
-            bulletType="bullet",
-            start=None,
-            bulletFontName="Helvetica",
-            bulletFontSize=8,
+            bulletType="bullet", start=None, bulletFontName="Helvetica", bulletFontSize=8,
         ))
 
-    # Symptoms
     symptoms = report.get("symptoms") or []
     if symptoms:
         story.append(Paragraph("Symptoms", section_style))
@@ -561,38 +501,28 @@ def build_structured_report_pdf(report: Dict[str, Any]) -> bytes:
             if ev:
                 story.append(ListFlowable(
                     [ListItem(Paragraph(str(e), subtle_style), leftIndent=12) for e in ev],
-                    bulletType="bullet",
-                    start=None,
-                    bulletFontName="Helvetica",
-                    bulletFontSize=7,
+                    bulletType="bullet", start=None, bulletFontName="Helvetica", bulletFontSize=7,
                 ))
             story.append(Spacer(1, 6))
 
-    # Protective factors
     pf = report.get("protective_factors") or []
     if pf:
         story.append(Paragraph("Protective Factors", section_style))
         story.append(ListFlowable(
             [ListItem(Paragraph(str(item), body_style), leftIndent=6) for item in pf],
-            bulletType="bullet",
-            start=None,
-            bulletFontName="Helvetica",
-            bulletFontSize=8,
+            bulletType="bullet", start=None, bulletFontName="Helvetica", bulletFontSize=8,
         ))
 
-    # Functional impact
     fi = report.get("functional_impact", "") or ""
     if fi.strip():
         story.append(Paragraph("Functional Impact", section_style))
         story.append(Paragraph(fi, body_style))
 
-    # Recommended focus
     rcf = report.get("recommended_clinical_focus", "") or ""
     if rcf.strip():
         story.append(Paragraph("Recommended Clinical Focus", section_style))
         story.append(Paragraph(rcf, body_style))
 
-    # Limitations
     lim = report.get("limitations", "") or ""
     if lim.strip():
         story.append(Paragraph("Limitations", section_style))
@@ -603,157 +533,303 @@ def build_structured_report_pdf(report: Dict[str, Any]) -> bytes:
     buffer.close()
     return pdf_bytes
 
-if "attach_uploader_key" not in st.session_state:
-    st.session_state.attach_uploader_key = 0
 
-with st.sidebar:
-    st.markdown("**📎 Attach Memories**")
-    st.caption("Add an image to your memory vault")
-    with st.form("attach_image_form", border=True):
-        uploaded = st.file_uploader(
-            "Upload image(s)",
-            type=["png", "jpg", "jpeg", "webp"],
-            accept_multiple_files=True,
-            key=f"attach_uploader_{st.session_state.attach_uploader_key}",
-        )
-        submitted = st.form_submit_button("Add to memory")
-        if submitted:
-            if not uploaded:
-                st.warning("Please select one or more images.")
-            else:
-                results = st.container()
-                total = len(uploaded)
-                for idx, uf in enumerate(uploaded, start=1):
-                    try:
-                        file_bytes = uf.getvalue()
-                        b64_str = base64.b64encode(file_bytes).decode("utf-8")
-                        with st.spinner(f"Uploading and processing image {idx} of {total}…"):
-                            resp = call_add_memory(b64_str)
-                        results.success(resp or f"{uf.name}: Memory added successfully")
-                    except Exception as e:
-                        results.error(f"{uf.name}: {e}")
+# ═══════════════════════════════════════════════════════════
+# AUTH GATE — show login/register if not authenticated
+# ═══════════════════════════════════════════════════════════
 
+def show_auth_page():
+    st.markdown(
+        """
+        <div class="hero">
+          <div class="logo"></div>
+          <div class="app-title">MEMORIRAY</div>
+        </div>
+        <div class="subtle">A gentle space to reflect, feel, and be heard.</div>
+        """,
+        unsafe_allow_html=True,
+    )
     st.divider()
-    st.markdown("**👥 Trusted Contacts**")
-    st.caption("People to reach out to if you're in crisis.")
-    # Display currently saved contacts
-    try:
-        _existing_contacts = call_get_trusted_contacts()
-    except Exception:
-        _existing_contacts = []
-    if _existing_contacts:
-        st.caption("Saved contacts:")
-        for em in _existing_contacts:
-            st.markdown(f"- {em}")
-    with st.form("trusted_contacts_form", border=True):
-        emails_input = st.text_input(
-            "Add Trusted Contact(s)",
-            placeholder="alice@example.com, bob@example.com",
-            help="Separate multiple emails with commas",
+
+    tab_login, tab_register = st.tabs(["Login", "Register"])
+
+    with tab_login:
+        with st.form("login_form"):
+            username = st.text_input("Username")
+            password = st.text_input("Password", type="password")
+            submitted = st.form_submit_button("Login")
+            if submitted:
+                if not username.strip() or not password:
+                    st.error("Please enter both username and password.")
+                else:
+                    try:
+                        data = call_login(username.strip(), password)
+                        st.session_state["user_id"] = data["user_id"]
+                        st.session_state["username"] = data["username"]
+                        st.rerun()
+                    except RuntimeError as e:
+                        st.error(str(e))
+
+    with tab_register:
+        with st.form("register_form"):
+            new_user = st.text_input("Choose a username")
+            new_pass = st.text_input("Choose a password", type="password")
+            confirm_pass = st.text_input("Confirm password", type="password")
+            submitted_reg = st.form_submit_button("Create account")
+            if submitted_reg:
+                if not new_user.strip() or not new_pass:
+                    st.error("Please fill in all fields.")
+                elif new_pass != confirm_pass:
+                    st.error("Passwords do not match.")
+                elif len(new_pass) < 4:
+                    st.error("Password must be at least 4 characters.")
+                else:
+                    try:
+                        data = call_register(new_user.strip(), new_pass)
+                        st.session_state["user_id"] = data["user_id"]
+                        st.session_state["username"] = data["username"]
+                        st.rerun()
+                    except RuntimeError as e:
+                        st.error(str(e))
+
+    st.markdown(
+        '<div class="footer">This is a supportive tool and not a substitute for professional care.</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def show_chat_page():
+    user_id = _current_user_id()
+    username = st.session_state.get("username", "")
+
+    st.markdown(
+        f"""
+        <div class="hero">
+          <div class="logo"></div>
+          <div class="app-title">MEMORIRAY</div>
+        </div>
+        <div class="subtle">Welcome back, <strong>{username}</strong></div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.divider()
+
+    col_clear, col_export, col_logout = st.columns([1, 1, 1])
+    with col_clear:
+        if st.button("🧹 Clear"):
+            st.session_state.pop("messages", None)
+            st.session_state.pop("report_html", None)
+            st.session_state.pop("report_pdf_bytes", None)
+            st.session_state.pop("report_filename", None)
+            try:
+                path = _history_path(user_id)
+                if os.path.exists(path):
+                    os.remove(path)
+            except Exception:
+                pass
+            st.rerun()
+    with col_export:
+        download_ready = st.session_state.get("messages", [])
+        if download_ready:
+            transcript = ""
+            for m in download_ready:
+                role = "You" if m["role"] == "user" else "Guide"
+                transcript += f"{role}: {m['content']}\n"
+            st.download_button(
+                "Export",
+                data=transcript.encode("utf-8"),
+                file_name="solace_chat.txt",
+                mime="text/plain",
+            )
+    with col_logout:
+        if st.button("Logout"):
+            for key in ["user_id", "username", "messages", "report_html", "report_pdf_bytes", "report_filename"]:
+                st.session_state.pop(key, None)
+            st.rerun()
+
+    if "messages" not in st.session_state:
+        saved = load_saved_messages(user_id)
+        if saved:
+            st.session_state.messages = saved
+        else:
+            st.session_state.messages = [
+                {
+                    "role": "assistant",
+                    "content": (
+                        f"Hi {username} \u2014 I'm here with a calm, supportive ear. "
+                        "How are you feeling right now?"
+                    ),
+                }
+            ]
+
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    # ─── Sidebar ───
+    if "attach_uploader_key" not in st.session_state:
+        st.session_state.attach_uploader_key = 0
+
+    with st.sidebar:
+        st.markdown(f"**Logged in as** `{username}`")
+        st.divider()
+        st.markdown("**Attach Memories**")
+        st.caption("Add an image to your memory vault")
+        with st.form("attach_image_form", border=True):
+            uploaded = st.file_uploader(
+                "Upload image(s)",
+                type=["png", "jpg", "jpeg", "webp"],
+                accept_multiple_files=True,
+                key=f"attach_uploader_{st.session_state.attach_uploader_key}",
+            )
+            submitted = st.form_submit_button("Add to memory")
+            if submitted:
+                if not uploaded:
+                    st.warning("Please select one or more images.")
+                else:
+                    results = st.container()
+                    total = len(uploaded)
+                    for idx, uf in enumerate(uploaded, start=1):
+                        try:
+                            file_bytes = uf.getvalue()
+                            b64_str = base64.b64encode(file_bytes).decode("utf-8")
+                            with st.spinner(f"Uploading and processing image {idx} of {total}..."):
+                                resp = call_add_memory(b64_str)
+                            results.success(resp or f"{uf.name}: Memory added successfully")
+                        except Exception as e:
+                            results.error(f"{uf.name}: {e}")
+
+        st.divider()
+        st.markdown("**Trusted Contacts**")
+        st.caption("People to reach out to if you're in crisis.")
+        try:
+            _existing_contacts = call_get_trusted_contacts()
+        except Exception:
+            _existing_contacts = []
+        if _existing_contacts:
+            st.caption("Saved contacts:")
+            for em in _existing_contacts:
+                st.markdown(f"- {em}")
+        with st.form("trusted_contacts_form", border=True):
+            emails_input = st.text_input(
+                "Add Trusted Contact(s)",
+                placeholder="alice@example.com, bob@example.com",
+                help="Separate multiple emails with commas",
+            )
+            submitted_tc = st.form_submit_button("Save contacts")
+            if submitted_tc:
+                emails = [e.strip() for e in emails_input.split(",") if e.strip()]
+                if not emails:
+                    st.warning("Please enter at least one valid email.")
+                else:
+                    try:
+                        resp = call_add_trusted_contact(emails)
+                        st.success(resp or "Trusted contacts saved.")
+                        time.sleep(1)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(str(e))
+
+        st.divider()
+        st.markdown("**Report**")
+        st.caption(
+            "Creates an AI-styled, self-contained HTML summary. "
+            "Use **View report** to open it in a new tab."
         )
-        submitted_tc = st.form_submit_button("Save contacts")
-        if submitted_tc:
-            emails = [e.strip() for e in emails_input.split(",") if e.strip()]
-            if not emails:
-                st.warning("Please enter at least one valid email.")
-            else:
+        col_gen, col_view = st.columns([1, 1])
+        with col_gen:
+            if st.button("Generate report"):
                 try:
-                    resp = call_add_trusted_contact(emails)
-                    st.success(resp or "Trusted contacts saved.")
-                    time.sleep(1)
-                    st.rerun()
+                    with st.spinner("Summarizing conversation and designing HTML report..."):
+                        structured: Dict[str, Any] | None = None
+                        try:
+                            structured = call_generate_report_structured()
+                        except Exception:
+                            structured = None
+                        if not structured:
+                            report_text = call_generate_report()
+                            if not (report_text or "").strip():
+                                st.warning("No report content available.")
+                            else:
+                                structured = {
+                                    "overall_assessment": report_text,
+                                    "risk_level": "NONE",
+                                    "key_concerns": [],
+                                    "symptoms": [],
+                                    "protective_factors": [],
+                                    "functional_impact": "",
+                                    "recommended_clinical_focus": "",
+                                    "limitations": "",
+                                }
+                        if structured:
+                            payload = clinical_report_json_for_styled_html(structured)
+                            if not payload.strip():
+                                st.warning("No report content available.")
+                            else:
+                                html_doc = call_generate_report_html(structured)
+                                st.session_state["report_html"] = html_doc
+                                st.session_state.pop("report_pdf_bytes", None)
+                                st.session_state.pop("report_filename", None)
+                                st.success("Report ready \u2014 click **View report**.")
                 except Exception as e:
                     st.error(str(e))
+        with col_view:
+            html_for_view = st.session_state.get("report_html")
+            if html_for_view:
+                st.caption("Opens in a **new tab** (allow pop-ups if the browser blocks them).")
+                render_report_open_in_new_tab(html_for_view, component_key="memori_report_html")
 
-    st.divider()
-    st.markdown("**📄 Report**")
-    st.caption(
-        "Creates an AI-styled, self-contained HTML summary (same clinical content as before). "
-        "Use **View report** to open it in a new tab."
-    )
-    col_gen, col_view = st.columns([1, 1])
-    with col_gen:
-        if st.button("Generate report"):
+    # ─── Chat input ───
+    prompt = st.chat_input("Share what's on your mind...")
+
+    if prompt:
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        save_messages(user_id, st.session_state.messages)
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        with st.chat_message("assistant"):
+            reply_placeholder = st.empty()
             try:
-                with st.spinner("Summarizing conversation and designing HTML report…"):
-                    structured: Dict[str, Any] | None = None
-                    try:
-                        structured = call_generate_report_structured()
-                    except Exception:
-                        structured = None
-                    if not structured:
-                        report_text = call_generate_report()
-                        if not (report_text or "").strip():
-                            st.warning("No report content available.")
-                        else:
-                            structured = {
-                                "overall_assessment": report_text,
-                                "risk_level": "NONE",
-                                "key_concerns": [],
-                                "symptoms": [],
-                                "protective_factors": [],
-                                "functional_impact": "",
-                                "recommended_clinical_focus": "",
-                                "limitations": "",
-                            }
-                    if structured:
-                        payload = clinical_report_json_for_styled_html(structured)
-                        if not payload.strip():
-                            st.warning("No report content available.")
-                        else:
-                            html_doc = call_generate_report_html(structured)
-                            st.session_state["report_html"] = html_doc
-                            st.session_state.pop("report_pdf_bytes", None)
-                            st.session_state.pop("report_filename", None)
-                            st.success("Report ready — click **View report**.")
-            except Exception as e:
-                st.error(str(e))
-    with col_view:
-        html_for_view = st.session_state.get("report_html")
-        if html_for_view:
-            st.caption("Opens in a **new tab** (allow pop-ups if the browser blocks them).")
-            render_report_open_in_new_tab(html_for_view, component_key="memori_report_html")
+                api_result = call_chat_api(prompt)
+                reply_text = api_result.get("reply", "")
+                images = api_result.get("images", []) or []
+                shown = ""
+                for ch in reply_text:
+                    shown += ch
+                    reply_placeholder.markdown(shown)
+                    time.sleep(0.002)
+                if images:
+                    for img_b64 in images:
+                        try:
+                            img_bytes = base64.b64decode(img_b64)
+                            st.image(img_bytes, use_container_width=False)
+                        except Exception:
+                            pass
+            except Exception:
+                gentle_msg = (
+                    "I'm feeling a bit disconnected right now. "
+                    "Let's try again in a moment."
+                )
+                st.info(gentle_msg)
+                reply_text = gentle_msg
+                reply_placeholder.markdown(reply_text)
 
-prompt = st.chat_input("Share what's on your mind…")
+        st.session_state.messages.append({"role": "assistant", "content": reply_text})
+        save_messages(user_id, st.session_state.messages)
 
-if prompt:
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    save_messages(st.session_state.messages)
-    with st.chat_message("user"):
-        st.markdown(prompt)
+    st.markdown(
+        '<div class="footer">This is a supportive tool and not a substitute for professional care. '
+        "If you're in immediate danger or crisis, please contact local emergency services or a crisis hotline in your region.</div>",
+        unsafe_allow_html=True,
+    )
 
-    with st.chat_message("assistant"):
-        reply_placeholder = st.empty()
-        try:
-            api_result = call_chat_api(prompt)
-            reply_text = api_result.get("reply", "")
-            images = api_result.get("images", []) or []
-            shown = ""
-            for ch in reply_text:
-                shown += ch
-                reply_placeholder.markdown(shown)
-                time.sleep(0.002)
-            if images:
-                for img_b64 in images:
-                    try:
-                        img_bytes = base64.b64decode(img_b64)
-                        st.image(img_bytes, use_container_width=False)
-                    except Exception:
-                        pass
-        except Exception:
-            gentle_msg = (
-                "I’m feeling a bit disconnected right now. "
-                "Let’s try again in a moment."
-            )
-            st.info(gentle_msg)
-            reply_text = gentle_msg
-            reply_placeholder.markdown(reply_text)
 
-    st.session_state.messages.append({"role": "assistant", "content": reply_text})
-    save_messages(st.session_state.messages)
+# ═══════════════════════════════════════════════════════════
+# MAIN ROUTING
+# ═══════════════════════════════════════════════════════════
 
-st.markdown(
-    '<div class="footer">This is a supportive tool and not a substitute for professional care. '
-    'If you’re in immediate danger or crisis, please contact local emergency services or a crisis hotline in your region.</div>',
-    unsafe_allow_html=True,
-)
+if "user_id" not in st.session_state:
+    show_auth_page()
+else:
+    show_chat_page()
