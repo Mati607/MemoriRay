@@ -27,6 +27,9 @@ from pathlib import Path
 import importlib.util
 from dataclasses import dataclass
 from typing import List, Dict
+from collections import defaultdict
+
+from database import init_db, create_user, authenticate_user
 
 if importlib.util.find_spec("baml_client") is None:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -38,8 +41,21 @@ from fastapi.responses import HTMLResponse, Response
 from pydantic import EmailStr
 
 
+class RegisterRequest(BaseModel):
+    username: str
+    password: str
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+class AuthResponse(BaseModel):
+    user_id: int
+    username: str
+
 class ChatRequest(BaseModel):
     message: str
+    user_id: int
     model: Optional[str] = None
 
 class ChatResponse(BaseModel):
@@ -48,9 +64,14 @@ class ChatResponse(BaseModel):
 
 class AddMemoryRequest(BaseModel):
     base_64_image: Optional[str] = None
+    user_id: int
 
 class AddTrustedContactRequest(BaseModel):
     email_list: list[EmailStr]
+    user_id: int
+
+class GetTrustedContactRequest(BaseModel):
+    user_id: int
 
 @dataclass
 class SelectedMemory:
@@ -79,6 +100,9 @@ class GenerateReportResponse(BaseModel):
     report: ClinicalReport
 
 
+class GenerateReportRequest(BaseModel):
+    user_id: int
+
 class GenerateReportHtmlRequest(BaseModel):
     report: ClinicalReport
 
@@ -99,13 +123,14 @@ def _strip_markdown_code_fence(text: str) -> str:
     return "\n".join(lines).strip()
 
 
-contact_list = set()
+contact_lists: Dict[int, set] = defaultdict(set)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     load_dotenv()
+    init_db()
     try:
-        app.state.genai_client = genai.Client()  
+        app.state.genai_client = genai.Client()
     except Exception as e:
         raise RuntimeError(f"Failed to initialize GenAI client: {e}")
     yield
@@ -148,16 +173,35 @@ def favicon():
 def health():
     return {"status": "ok"}
 
-msg_history : list[str] = []
+@app.post("/register", response_model=AuthResponse)
+def register(req: RegisterRequest):
+    if not req.username or not req.username.strip():
+        raise HTTPException(status_code=400, detail="Username must not be empty.")
+    if len(req.password) < 4:
+        raise HTTPException(status_code=400, detail="Password must be at least 4 characters.")
+    try:
+        user = create_user(req.username.strip(), req.password)
+    except Exception:
+        raise HTTPException(status_code=409, detail="Username already taken.")
+    return AuthResponse(user_id=user.id, username=user.username)
+
+@app.post("/login", response_model=AuthResponse)
+def login(req: LoginRequest):
+    user = authenticate_user(req.username.strip(), req.password)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Invalid username or password.")
+    return AuthResponse(user_id=user.id, username=user.username)
+
+msg_histories: Dict[int, list] = defaultdict(list)
 
 
-def email_contacts() -> str:
-    global contact_list
-    
+def email_contacts(user_id: int) -> str:
+    contact_list = contact_lists[user_id]
+
     print("\n" + "🚨" * 30)
     print("ESCALATION TRIGGERED - ALERTING TRUSTED CONTACTS")
     print("🚨" * 30 + "\n")
-    
+
     if not contact_list:
         print("⚠️ WARNING: No trusted contacts configured!")
         return "ESCALATION TRIGGERED: However, no trusted contacts are configured. Please add contacts in the sidebar."
@@ -233,40 +277,42 @@ async def chat(req: ChatRequest):
     if not req.message or not req.message.strip():
         raise HTTPException(status_code=400, detail="`message` must not be empty.")
 
+    user_id = req.user_id
+    msg_history = msg_histories[user_id]
+
     sentiment = await baml.SentimentAnalysis(req.message)
-    selected_memory = await get_memory(req.message)
+    selected_memory = await get_memory(req.message, user_id)
     memory_description = selected_memory.description
     image_list = selected_memory.images
-    
-    # Check if escalation is needed with error handling
+
     try:
         escalate = await baml.TrustedContact(req.message)
     except Exception as e:
         print(f"⚠️ Error in TrustedContact detection: {e}")
-        # Default to not escalating on error to avoid false positives
         escalate = False
-    
+
+    contact_list = contact_lists[user_id]
     print(f"\n{'='*60}")
-    print(f"🔍 Message: '{req.message}'")
+    print(f"🔍 Message: '{req.message}' (user_id={user_id})")
     print(f"🚨 Escalation needed: {escalate}")
     print(f"📧 Configured contacts: {len(contact_list)}")
     print(f"{'='*60}\n")
-    
+
     if escalate:
-        escalate_message = email_contacts()
+        escalate_message = email_contacts(user_id)
         print(f"✅ Escalation message: {escalate_message}")
-    else: 
+    else:
         escalate_message = "The issue is not critical enough to escalate to the trusted contacts."
         print(f"ℹ️  No escalation: {escalate_message}")
-    
+
     reply_text = await baml.ChatReply(
-        req.message, 
-        msg_history, 
-        sentiment, 
+        req.message,
+        msg_history,
+        sentiment,
         memory_description,
         escalate_message
     )
-    
+
     msg_history.append(req.message + " -> " + reply_text)
     return ChatResponse(reply=reply_text, images=image_list)
 
@@ -280,8 +326,8 @@ def convert_image_to_base64(image_url: HttpUrl) -> str:
     response.raise_for_status()
     return base64.b64encode(response.content).decode("utf-8")
 
-memory_descriptions : list[dict[str, int | str]] = []
-images_store : list[str] = []
+memory_descriptions_per_user: Dict[int, list] = defaultdict(list)
+images_store_per_user: Dict[int, list] = defaultdict(list)
 
 async def get_image_description_from_base64(image_b64: str, media_type: str) -> str:
     image = baml_py.Image.from_base64(media_type, image_b64)
@@ -303,31 +349,31 @@ async def add_memory(req: AddMemoryRequest):
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid base64 image data.")
 
+    user_id = req.user_id
     description = await get_image_description_from_base64(b64_data, media_type)
-    images_store.append(req.base_64_image)
-    memory_descriptions.append({
+    images_store_per_user[user_id].append(req.base_64_image)
+    memory_descriptions_per_user[user_id].append({
         "description": description,
-        "image_index": len(images_store) - 1,
+        "image_index": len(images_store_per_user[user_id]) - 1,
     })
 
     return ChatResponse(reply=description)
 
 @app.post("/add_trusted_contact", response_model=ChatResponse)
-async def add_trusted_contact(req: AddTrustedContactRequest):  # Fix parameter type
-    global contact_list
+async def add_trusted_contact(req: AddTrustedContactRequest):
     if not req.email_list:
         raise HTTPException(status_code=400, detail="email list is required.")
     for email in req.email_list:
-        contact_list.add(email)
+        contact_lists[req.user_id].add(email)
     return ChatResponse(reply="trusted contact added successfully.")
 
 @app.post("/get_trusted_contact", response_model=ChatResponse)
-async def get_trusted_contact():
-    global contact_list
-    # Return as JSON string in 'reply' to satisfy ChatResponse schema
-    return ChatResponse(reply=json.dumps(list(contact_list)))
+async def get_trusted_contact(req: GetTrustedContactRequest):
+    return ChatResponse(reply=json.dumps(list(contact_lists[req.user_id])))
 
-async def get_memory(query: str) -> SelectedMemory:
+async def get_memory(query: str, user_id: int) -> SelectedMemory:
+    memory_descriptions = memory_descriptions_per_user[user_id]
+    images_store = images_store_per_user[user_id]
     if not memory_descriptions:
         return SelectedMemory("", [])
 
@@ -342,19 +388,15 @@ async def get_memory(query: str) -> SelectedMemory:
     ]
     return SelectedMemory(description, image_list)
     
-@app.post("/generate_report",response_model=ChatResponse)
-async def generate_report():
-    global msg_history
+@app.post("/generate_report", response_model=ChatResponse)
+async def generate_report(req: GenerateReportRequest):
+    msg_history = msg_histories[req.user_id]
     report = await baml.GenerateReport(msg_history)
-    # Serialize the Report pydantic model to JSON string to satisfy ChatResponse schema
     return ChatResponse(reply=report.model_dump_json(indent=2))
 
 @app.post("/generate_report_structured", response_model=GenerateReportResponse)
-async def generate_report_structured():
-    """
-    Returns a structured clinical report with clear fields, decoupled from generated BAML models.
-    """
-    global msg_history
+async def generate_report_structured(req: GenerateReportRequest):
+    msg_history = msg_histories[req.user_id]
     report = await baml.GenerateReport(msg_history)
     # Map baml Client Report -> ClinicalReport
     symptoms_out: List[SymptomOut] = []
