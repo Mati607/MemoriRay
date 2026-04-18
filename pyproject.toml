@@ -27,6 +27,7 @@ email-validator = "^2.2.0"
 reportlab = "^4.2.5"
 sendgrid = "^6.12.5"
 certifi = "^2025.11.12"
+sqlalchemy = "^2.0"
 
 [tool.poetry.scripts]
 memori-api = "runserver:main" 
