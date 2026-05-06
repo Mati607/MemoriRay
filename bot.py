@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from typing import List, Dict
 from collections import defaultdict
 
-from database import init_db, create_user, authenticate_user
+from database import init_db, create_user, authenticate_user, save_mood_entry, get_mood_history
 
 if importlib.util.find_spec("baml_client") is None:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -109,6 +109,55 @@ class GenerateReportHtmlRequest(BaseModel):
 
 class GenerateReportHtmlResponse(BaseModel):
     html: str
+
+
+class MoodEntryOut(BaseModel):
+    timestamp: str
+    mood_score: float
+    sentiment_text: str
+    message_snippet: str
+
+
+class MoodHistoryResponse(BaseModel):
+    entries: List[MoodEntryOut]
+    total: int
+
+
+# ── Sentiment → numeric mood score (0–10) ──────────────────────────────────
+_POSITIVE_KEYWORDS: Dict[str, float] = {
+    "happy": 8.0, "joyful": 9.0, "grateful": 8.0, "hopeful": 7.5,
+    "calm": 7.0, "peaceful": 7.5, "excited": 8.5, "motivated": 8.0,
+    "positive": 7.5, "better": 6.5, "good": 7.0, "great": 8.0,
+    "wonderful": 9.0, "content": 7.0, "relieved": 6.5, "loved": 8.5,
+    "energetic": 8.0, "confident": 8.0, "optimistic": 7.5, "proud": 8.0,
+    "cheerful": 8.0, "safe": 7.0, "improving": 6.5, "healing": 7.0,
+    "connected": 7.5, "supported": 7.5, "balanced": 7.0, "refreshed": 7.5,
+}
+
+_NEGATIVE_KEYWORDS: Dict[str, float] = {
+    "sad": 3.0, "anxious": 2.5, "depressed": 1.5, "hopeless": 1.0,
+    "alone": 2.0, "scared": 2.0, "worried": 3.0, "stressed": 3.0,
+    "overwhelmed": 2.0, "lost": 2.5, "exhausted": 2.5, "angry": 3.0,
+    "frustrated": 3.5, "upset": 3.0, "guilty": 3.0, "shame": 2.0,
+    "fear": 2.5, "numb": 2.0, "empty": 1.5, "crying": 2.5, "pain": 2.0,
+    "hurt": 2.5, "crisis": 1.0, "desperate": 1.5, "helpless": 1.5,
+    "worthless": 1.0, "terrible": 2.0, "horrible": 1.5, "miserable": 1.5,
+    "grief": 2.0, "trauma": 2.0, "isolated": 2.0, "struggling": 3.0,
+}
+
+
+def score_sentiment(sentiment_text: str) -> float:
+    text = (sentiment_text or "").lower()
+    scores: List[float] = []
+    for word, score in _POSITIVE_KEYWORDS.items():
+        if word in text:
+            scores.append(score)
+    for word, score in _NEGATIVE_KEYWORDS.items():
+        if word in text:
+            scores.append(score)
+    if not scores:
+        return 5.0
+    return round(sum(scores) / len(scores), 2)
 
 
 def _strip_markdown_code_fence(text: str) -> str:
@@ -314,7 +363,35 @@ async def chat(req: ChatRequest):
     )
 
     msg_history.append(req.message + " -> " + reply_text)
+
+    try:
+        mood_score = score_sentiment(str(sentiment))
+        save_mood_entry(
+            user_id=user_id,
+            sentiment_text=str(sentiment)[:1000],
+            mood_score=mood_score,
+            message_snippet=req.message[:300],
+        )
+    except Exception as e:
+        print(f"⚠️ Could not save mood entry: {e}")
+
     return ChatResponse(reply=reply_text, images=image_list)
+
+@app.get("/mood_history/{user_id}", response_model=MoodHistoryResponse)
+def mood_history(user_id: int, limit: int = 90):
+    """Return persisted mood entries for a user, newest first."""
+    raw = get_mood_history(user_id, limit=limit)
+    entries = [
+        MoodEntryOut(
+            timestamp=e["timestamp"],
+            mood_score=float(e["mood_score"] or 5.0),
+            sentiment_text=e["sentiment_text"] or "",
+            message_snippet=e["message_snippet"] or "",
+        )
+        for e in raw
+    ]
+    return MoodHistoryResponse(entries=entries, total=len(entries))
+
 
 if __name__ == "__main__":
     import uvicorn

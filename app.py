@@ -4,6 +4,8 @@ import base64
 import time
 from typing import Dict, Any, List
 import json
+from datetime import datetime, timezone, timedelta
+from collections import defaultdict
 
 import requests
 import streamlit as st
@@ -313,6 +315,18 @@ def normalize_llm_html_document(raw: str) -> str:
     return s.strip()
 
 
+def call_mood_history(limit: int = 90) -> List[Dict[str, Any]]:
+    url = f"{_api_base()}/mood_history/{_current_user_id()}?limit={limit}"
+    try:
+        r = requests.get(url, timeout=15)
+        if r.ok:
+            data = r.json() or {}
+            return data.get("entries") or []
+    except Exception:
+        pass
+    return []
+
+
 def call_generate_report_html(report: Dict[str, Any]) -> str:
     url = f"{_api_base()}/generate_report_html"
     r = requests.post(url, json={"report": report}, timeout=180)
@@ -535,6 +549,237 @@ def build_structured_report_pdf(report: Dict[str, Any]) -> bytes:
 
 
 # ═══════════════════════════════════════════════════════════
+# MOOD DASHBOARD
+# ═══════════════════════════════════════════════════════════
+
+_EMOTION_KEYWORDS = [
+    ("Happy", ["happy", "joyful", "cheerful", "content", "glad"]),
+    ("Hopeful", ["hopeful", "optimistic", "motivated", "excited", "confident"]),
+    ("Calm", ["calm", "peaceful", "relaxed", "balanced", "safe"]),
+    ("Sad", ["sad", "unhappy", "down", "gloomy", "crying", "grief"]),
+    ("Anxious", ["anxious", "worried", "nervous", "scared", "fear"]),
+    ("Stressed", ["stressed", "overwhelmed", "exhausted", "frustrated", "tense"]),
+    ("Depressed", ["depressed", "hopeless", "empty", "numb", "worthless", "helpless"]),
+    ("Angry", ["angry", "upset", "furious", "irritated", "frustrated"]),
+]
+
+_MOOD_EMOJI = {
+    (0, 2): "😔", (2, 4): "😟", (4, 5): "😐",
+    (5, 6): "🙂", (6, 8): "😊", (8, 11): "😄",
+}
+
+def _mood_emoji(score: float) -> str:
+    for (lo, hi), em in _MOOD_EMOJI.items():
+        if lo <= score < hi:
+            return em
+    return "😐"
+
+def _mood_color(score: float) -> str:
+    if score < 3:
+        return "#ef4444"
+    if score < 5:
+        return "#f97316"
+    if score < 6.5:
+        return "#eab308"
+    if score < 8:
+        return "#22c55e"
+    return "#16a34a"
+
+def _mood_label(score: float) -> str:
+    if score < 3:
+        return "Low"
+    if score < 5:
+        return "Struggling"
+    if score < 6.5:
+        return "Neutral"
+    if score < 8:
+        return "Good"
+    return "Great"
+
+
+def show_dashboard_page():
+    username = st.session_state.get("username", "")
+
+    st.markdown(
+        f"""
+        <div class="hero">
+          <div class="logo"></div>
+          <div class="app-title">MEMORIRAY</div>
+        </div>
+        <div class="subtle">Mood Dashboard &mdash; <strong>{username}</strong></div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.divider()
+
+    with st.spinner("Loading your mood history..."):
+        entries = call_mood_history(limit=90)
+
+    if not entries:
+        st.info(
+            "No mood data yet. Start a chat conversation and your emotional "
+            "trends will appear here."
+        )
+        return
+
+    # ── Parse entries ──────────────────────────────────────────────────────
+    now_utc = datetime.now(timezone.utc)
+    parsed = []
+    for e in entries:
+        try:
+            ts_str = e.get("timestamp", "")
+            if ts_str.endswith("Z"):
+                ts_str = ts_str[:-1] + "+00:00"
+            ts = datetime.fromisoformat(ts_str)
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            parsed.append({
+                "ts": ts,
+                "score": float(e.get("mood_score") or 5.0),
+                "sentiment": e.get("sentiment_text") or "",
+                "snippet": e.get("message_snippet") or "",
+            })
+        except Exception:
+            continue
+
+    parsed.sort(key=lambda x: x["ts"])
+
+    # ── KPI metrics ───────────────────────────────────────────────────────
+    scores = [p["score"] for p in parsed]
+    avg_score = sum(scores) / len(scores) if scores else 5.0
+    latest_score = parsed[-1]["score"] if parsed else 5.0
+    latest_ts = parsed[-1]["ts"] if parsed else None
+
+    active_days = len({p["ts"].date() for p in parsed})
+    week_ago = now_utc - timedelta(days=7)
+    recent_entries = [p for p in parsed if p["ts"] >= week_ago]
+    week_avg = (sum(p["score"] for p in recent_entries) / len(recent_entries)) if recent_entries else None
+
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric(
+            "Latest Mood",
+            f"{_mood_emoji(latest_score)} {_mood_label(latest_score)}",
+            help=f"Score: {latest_score:.1f}/10",
+        )
+    with col2:
+        st.metric(
+            "7-Day Average",
+            f"{week_avg:.1f}/10" if week_avg is not None else "—",
+            delta=f"{week_avg - avg_score:+.1f} vs all-time" if week_avg is not None else None,
+        )
+    with col3:
+        st.metric("All-Time Average", f"{avg_score:.1f}/10")
+    with col4:
+        st.metric("Active Days", active_days, help="Days with at least one message")
+
+    st.divider()
+
+    # ── Mood trend chart ──────────────────────────────────────────────────
+    st.markdown("#### Mood Over Time")
+    st.caption("Each point represents one message. Hover for details.")
+
+    try:
+        import pandas as pd
+
+        df = pd.DataFrame([
+            {"Date & Time": p["ts"].strftime("%Y-%m-%d %H:%M"), "Mood Score": p["score"]}
+            for p in parsed
+        ])
+        df["Date & Time"] = pd.to_datetime(df["Date & Time"])
+        df = df.set_index("Date & Time")
+
+        # Rolling 5-message smoothed line
+        df["Smoothed"] = df["Mood Score"].rolling(window=5, min_periods=1).mean()
+
+        st.line_chart(df[["Mood Score", "Smoothed"]], height=240)
+    except Exception:
+        st.info("Install pandas for interactive charts.")
+
+    # ── Emotion frequency bar chart ───────────────────────────────────────
+    st.markdown("#### Emotion Frequency")
+    st.caption("How often each emotional theme appeared in your conversations.")
+
+    emotion_counts: Dict[str, int] = defaultdict(int)
+    for p in parsed:
+        text = p["sentiment"].lower()
+        for label, keywords in _EMOTION_KEYWORDS:
+            if any(kw in text for kw in keywords):
+                emotion_counts[label] += 1
+
+    if emotion_counts:
+        try:
+            import pandas as pd
+            emo_df = pd.DataFrame(
+                list(emotion_counts.items()), columns=["Emotion", "Count"]
+            ).sort_values("Count", ascending=False).set_index("Emotion")
+            st.bar_chart(emo_df, height=200)
+        except Exception:
+            for label, cnt in sorted(emotion_counts.items(), key=lambda x: -x[1]):
+                st.write(f"**{label}**: {cnt}")
+
+    # ── Daily mood heatmap ────────────────────────────────────────────────
+    st.markdown("#### Daily Average Mood (Last 30 Days)")
+    st.caption("Your average mood score for each day.")
+
+    try:
+        import pandas as pd
+        thirty_ago = now_utc - timedelta(days=30)
+        daily: Dict[str, list] = defaultdict(list)
+        for p in parsed:
+            if p["ts"] >= thirty_ago:
+                day_str = p["ts"].strftime("%Y-%m-%d")
+                daily[day_str].append(p["score"])
+        if daily:
+            daily_avg = {day: round(sum(v) / len(v), 2) for day, v in daily.items()}
+            day_df = pd.DataFrame(
+                list(daily_avg.items()), columns=["Date", "Avg Mood"]
+            ).sort_values("Date").set_index("Date")
+            st.bar_chart(day_df, height=180)
+        else:
+            st.info("No data in the last 30 days.")
+    except Exception:
+        pass
+
+    # ── Recent mood log ───────────────────────────────────────────────────
+    st.divider()
+    st.markdown("#### Recent Mood Log")
+    with st.expander("Show last 20 entries", expanded=False):
+        for p in reversed(parsed[-20:]):
+            score = p["score"]
+            emoji = _mood_emoji(score)
+            color = _mood_color(score)
+            ts_fmt = p["ts"].strftime("%b %d, %Y  %H:%M")
+            snippet = (p["snippet"] or "")[:120]
+            sentiment_short = (p["sentiment"] or "")[:160]
+            st.markdown(
+                f"""
+                <div style="
+                  padding: .55rem .8rem; margin-bottom: .5rem;
+                  background: var(--mh-card);
+                  border: 1px solid var(--mh-border);
+                  border-left: 4px solid {color};
+                  border-radius: 10px;
+                  font-size: .88rem;
+                ">
+                  <span style="font-weight:700; color:{color};">{emoji} {score:.1f}/10 &mdash; {_mood_label(score)}</span>
+                  &nbsp;<span style="color:var(--mh-muted); font-size:.8rem;">{ts_fmt}</span>
+                  <br>
+                  <span style="color:var(--mh-ink);">"{snippet}"</span>
+                  <br>
+                  <span style="color:var(--mh-muted); font-size:.8rem;">{sentiment_short}</span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+    st.markdown(
+        '<div class="footer">This is a supportive tool and not a substitute for professional care.</div>',
+        unsafe_allow_html=True,
+    )
+
+
+# ═══════════════════════════════════════════════════════════
 # AUTH GATE — show login/register if not authenticated
 # ═══════════════════════════════════════════════════════════
 
@@ -601,6 +846,27 @@ def show_auth_page():
 def show_chat_page():
     user_id = _current_user_id()
     username = st.session_state.get("username", "")
+
+    # ── Sidebar navigation ──────────────────────────────────────────────
+    with st.sidebar:
+        nav = st.radio(
+            "Navigate",
+            ["Chat", "Mood Dashboard"],
+            index=0 if st.session_state.get("nav_page", "Chat") == "Chat" else 1,
+            key="nav_radio",
+        )
+        st.session_state["nav_page"] = nav
+
+    if st.session_state.get("nav_page") == "Mood Dashboard":
+        with st.sidebar:
+            st.divider()
+            st.markdown(f"**Logged in as** `{username}`")
+            if st.button("Logout", key="dash_logout"):
+                for key in ["user_id", "username", "messages", "report_html", "report_pdf_bytes", "report_filename", "nav_page"]:
+                    st.session_state.pop(key, None)
+                st.rerun()
+        show_dashboard_page()
+        return
 
     st.markdown(
         f"""
