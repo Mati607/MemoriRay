@@ -1,0 +1,14 @@
+[
+  {
+    "role": "assistant",
+    "content": "Hi alice — I'm here with a calm, supportive ear. How are you feeling right now?"
+  },
+  {
+    "role": "user",
+    "content": "wassup bitch"
+  },
+  {
+    "role": "assistant",
+    "content": "It sounds like you might be feeling really frustrated or upset right now. I'm here to listen without judgment, and I want to understand what's on your mind.\n\nWould you like to tell me what's going on or how you're feeling? I'm here to support you."
+  }
+]

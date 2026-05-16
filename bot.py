@@ -22,6 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, HttpUrl
 from dotenv import load_dotenv
 from google import genai
+from datetime import datetime, timezone, timedelta
 import sys
 from pathlib import Path
 import importlib.util
@@ -29,7 +30,13 @@ from dataclasses import dataclass
 from typing import List, Dict
 from collections import defaultdict
 
-from database import init_db, create_user, authenticate_user, save_mood_entry, get_mood_history
+from database import (
+    init_db, create_user, authenticate_user, save_mood_entry, get_mood_history,
+    add_therapy_exercise, get_user_exercises, get_exercise_templates,
+    add_mood_insight, get_user_insights, save_weekly_report, get_latest_weekly_report,
+    create_exercise_template
+)
+from analytics_service import MoodAnalytics, TherapyRecommender, InsightGenerator
 
 if importlib.util.find_spec("baml_client") is None:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -523,3 +530,401 @@ async def generate_report_html(req: GenerateReportHtmlRequest):
         raise
     html_out = _strip_markdown_code_fence(html_out or "")
     return GenerateReportHtmlResponse(html=html_out)
+
+
+# ── Analytics & Therapy Exercises ──────────────────────────────────────────
+class MoodStatsRequest(BaseModel):
+    user_id: int
+    days: int = 30
+
+class MoodStatisticsResponse(BaseModel):
+    avg_mood: float | None
+    min_mood: float | None
+    max_mood: float | None
+    volatility: float | None
+    total_entries: int
+
+@app.post("/analytics/mood_stats", response_model=MoodStatisticsResponse)
+def get_mood_stats(req: MoodStatsRequest):
+    """Get mood statistics for a user over N days."""
+    stats = MoodAnalytics.get_mood_statistics(req.user_id, days=req.days)
+    return MoodStatisticsResponse(**stats)
+
+class MoodPatternsResponse(BaseModel):
+    daily_averages: Dict[str, float]
+    best_day: str | None
+    worst_day: str | None
+    dominant_emotions: List[str]
+    emotion_distribution: Dict[str, int]
+
+@app.post("/analytics/patterns", response_model=MoodPatternsResponse)
+def get_patterns(req: MoodStatsRequest):
+    """Identify mood patterns in user data."""
+    patterns = MoodAnalytics.identify_mood_patterns(req.user_id, days=req.days)
+    return MoodPatternsResponse(**patterns)
+
+class TriggerResponse(BaseModel):
+    trigger: str
+    frequency: int
+    impact: str
+
+@app.post("/analytics/triggers", response_model=List[TriggerResponse])
+def get_triggers(req: MoodStatsRequest):
+    """Detect mood triggers from user history."""
+    triggers = MoodAnalytics.detect_mood_triggers(req.user_id, days=req.days)
+    return [TriggerResponse(**t) for t in triggers]
+
+class WeeklySummaryResponse(BaseModel):
+    week_start: str
+    week_end: str
+    avg_mood_score: float | None
+    volatility: float | None
+    best_day: str | None
+    worst_day: str | None
+    dominant_emotions: List[str]
+    exercises_completed: int
+    avg_exercise_effectiveness: float | None
+    total_entries: int
+
+@app.post("/analytics/weekly_summary", response_model=WeeklySummaryResponse)
+def get_weekly_summary(req: MoodStatsRequest):
+    """Generate a summary of the user's week."""
+    summary = MoodAnalytics.generate_weekly_summary(req.user_id)
+    return WeeklySummaryResponse(**summary)
+
+class ImprovementSuggestionsResponse(BaseModel):
+    suggestions: List[str]
+
+@app.post("/analytics/suggestions", response_model=ImprovementSuggestionsResponse)
+def get_improvement_suggestions(req: MoodStatsRequest):
+    """Get personalized improvement suggestions."""
+    suggestions = MoodAnalytics.generate_improvement_suggestions(req.user_id)
+    return ImprovementSuggestionsResponse(suggestions=suggestions)
+
+class ExerciseRecommendationResponse(BaseModel):
+    exercise_type: str
+    name: str
+    description: str
+    reason: str
+
+class RecommendExercisesResponse(BaseModel):
+    recommendations: List[ExerciseRecommendationResponse]
+
+@app.post("/therapy/recommend", response_model=RecommendExercisesResponse)
+def recommend_exercises(req: MoodStatsRequest):
+    """Get therapy exercise recommendations based on mood patterns."""
+    recommendations = TherapyRecommender.recommend_exercises(req.user_id, top_n=3)
+    return RecommendExercisesResponse(
+        recommendations=[ExerciseRecommendationResponse(**r) for r in recommendations]
+    )
+
+class CompleteExerciseRequest(BaseModel):
+    user_id: int
+    exercise_type: str
+    name: str
+    description: str
+    category: str
+    duration_minutes: int | None = None
+    effectiveness_rating: float | None = None
+    notes: str | None = None
+
+@app.post("/therapy/complete_exercise")
+def complete_exercise(req: CompleteExerciseRequest):
+    """Log a completed therapy exercise."""
+    add_therapy_exercise(
+        user_id=req.user_id,
+        exercise_type=req.exercise_type,
+        name=req.name,
+        description=req.description,
+        category=req.category,
+        duration_minutes=req.duration_minutes,
+        effectiveness_rating=req.effectiveness_rating,
+        notes=req.notes,
+    )
+    return {"status": "success", "message": "Exercise logged successfully"}
+
+class UserExercisesResponse(BaseModel):
+    exercises: List[Dict]
+    total: int
+
+@app.post("/therapy/history", response_model=UserExercisesResponse)
+def get_exercise_history(req: MoodStatsRequest):
+    """Get user's therapy exercise history."""
+    exercises = get_user_exercises(req.user_id, limit=50)
+    return UserExercisesResponse(exercises=exercises, total=len(exercises))
+
+class InsightResponse(BaseModel):
+    type: str
+    title: str
+    description: str
+    confidence: float
+
+class InsightsResponse(BaseModel):
+    insights: List[InsightResponse]
+
+@app.post("/analytics/insights", response_model=InsightsResponse)
+def get_insights(req: MoodStatsRequest):
+    """Get AI-generated insights from mood data."""
+    insights = InsightGenerator.generate_all_insights(req.user_id)
+    return InsightsResponse(
+        insights=[InsightResponse(**i) for i in insights]
+    )
+
+class UserInsightsResponse(BaseModel):
+    insights: List[Dict]
+    total: int
+
+@app.post("/analytics/insight_history", response_model=UserInsightsResponse)
+def get_insight_history(req: MoodStatsRequest):
+    """Get previously generated insights for a user."""
+    insights = get_user_insights(req.user_id, limit=20)
+    return UserInsightsResponse(insights=insights, total=len(insights))
+
+class WeeklyReportResponse(BaseModel):
+    week_start: str
+    week_end: str
+    avg_mood_score: float | None
+    best_day: str | None
+    worst_day: str | None
+    mood_volatility: float | None
+    dominant_emotions: str | None
+    exercises_completed: int
+    key_improvements: str | None
+    recommendations: str | None
+    generated_at: str
+
+@app.post("/analytics/latest_report", response_model=WeeklyReportResponse | None)
+def get_latest_report(req: MoodStatsRequest):
+    """Get the latest weekly report for a user."""
+    report = get_latest_weekly_report(req.user_id)
+    return WeeklyReportResponse(**report) if report else None
+
+class GenerateWeeklyReportRequest(BaseModel):
+    user_id: int
+
+@app.post("/analytics/generate_report")
+def generate_weekly_report_endpoint(req: GenerateWeeklyReportRequest):
+    """Generate and save a new weekly report."""
+    from datetime import datetime, timezone, timedelta
+
+    now = datetime.now(timezone.utc)
+    week_start = now - timedelta(days=now.weekday())
+    week_end = week_start + timedelta(days=7)
+
+    summary = MoodAnalytics.generate_weekly_summary(req.user_id)
+    patterns = MoodAnalytics.identify_mood_patterns(req.user_id, days=7)
+    suggestions = MoodAnalytics.generate_improvement_suggestions(req.user_id)
+
+    dominant_emotions_str = ", ".join(patterns.get("dominant_emotions", []))
+    key_improvements_str = "\n".join(suggestions[:2]) if suggestions else "Continue monitoring mood trends."
+    recommendations_str = "\n".join(suggestions[2:]) if len(suggestions) > 2 else ""
+
+    save_weekly_report(
+        user_id=req.user_id,
+        week_start=week_start,
+        week_end=week_end,
+        avg_mood_score=summary.get("avg_mood_score"),
+        best_day=summary.get("best_day"),
+        worst_day=summary.get("worst_day"),
+        mood_volatility=summary.get("volatility"),
+        dominant_emotions=dominant_emotions_str,
+        exercises_completed=summary.get("exercises_completed", 0),
+        key_improvements=key_improvements_str,
+        recommendations=recommendations_str,
+    )
+
+    return {
+        "status": "success",
+        "message": "Weekly report generated and saved",
+        "summary": summary,
+    }
+
+class ExerciseTemplateResponse(BaseModel):
+    id: int
+    exercise_type: str
+    name: str
+    description: str
+    instructions: str
+    category: str
+    estimated_duration: int
+    difficulty_level: str
+
+class ListExerciseTemplatesResponse(BaseModel):
+    templates: List[ExerciseTemplateResponse]
+    total: int
+
+@app.get("/therapy/templates", response_model=ListExerciseTemplatesResponse)
+def list_exercise_templates(category: str = None):
+    """Get available therapy exercise templates."""
+    templates = get_exercise_templates(category=category)
+    return ListExerciseTemplatesResponse(templates=templates, total=len(templates))
+
+class RecordMoodRequest(BaseModel):
+    user_id: int
+    mood_score: float
+    sentiment_text: str = ""
+    emotion_category: str = ""
+    intensity: float = 5.0
+    triggers: str = ""
+    message_snippet: str = ""
+
+@app.post("/mood/record")
+def record_mood(req: RecordMoodRequest):
+    """Record a mood entry with emotions, intensity, and triggers."""
+    from database import SessionLocal, MoodEntry
+    from datetime import datetime, timezone
+
+    db = SessionLocal()
+    try:
+        entry = MoodEntry(
+            user_id=req.user_id,
+            mood_score=req.mood_score,
+            sentiment_text=req.sentiment_text,
+            emotion_category=req.emotion_category,
+            intensity=req.intensity,
+            triggers=req.triggers,
+            message_snippet=req.message_snippet[:300] if req.message_snippet else "",
+            timestamp=datetime.now(timezone.utc),
+        )
+        db.add(entry)
+        db.commit()
+    finally:
+        db.close()
+
+    return {
+        "status": "success",
+        "message": "Mood entry recorded",
+        "mood_score": req.mood_score,
+        "emotion": req.emotion_category,
+    }
+
+class GetMoodDataResponse(BaseModel):
+    dates: List[str]
+    scores: List[float]
+    emotions: List[str]
+    intensity: List[float]
+
+@app.post("/mood/data", response_model=GetMoodDataResponse)
+def get_mood_data(req: MoodStatsRequest):
+    """Get mood data for charting and visualization."""
+    db = SessionLocal()
+    try:
+        from datetime import timedelta, timezone
+        cutoff = datetime.now(timezone.utc) - timedelta(days=req.days)
+        entries = (
+            db.query(MoodEntry)
+            .filter(MoodEntry.user_id == req.user_id, MoodEntry.timestamp >= cutoff)
+            .order_by(MoodEntry.timestamp.asc())
+            .all()
+        )
+
+        return GetMoodDataResponse(
+            dates=[e.timestamp.isoformat() for e in entries],
+            scores=[e.mood_score or 0 for e in entries],
+            emotions=[e.emotion_category or "unknown" for e in entries],
+            intensity=[e.intensity or 5.0 for e in entries],
+        )
+    finally:
+        db.close()
+
+
+# Initialize exercise templates on startup
+_exercise_templates_initialized = False
+
+@app.on_event("startup")
+def initialize_templates():
+    """Populate exercise templates on app startup."""
+    global _exercise_templates_initialized
+    if _exercise_templates_initialized:
+        return
+
+    try:
+        existing = get_exercise_templates()
+        if existing:
+            _exercise_templates_initialized = True
+            return
+    except Exception:
+        pass
+
+    templates = [
+        {
+            "exercise_type": "breathing",
+            "name": "Box Breathing",
+            "description": "A calming breathing technique to reduce anxiety and stress",
+            "instructions": "1. Breathe in for 4 counts\n2. Hold for 4 counts\n3. Exhale for 4 counts\n4. Hold for 4 counts\n5. Repeat 5-10 times",
+            "category": "anxiety",
+            "estimated_duration": 5,
+            "difficulty_level": "beginner",
+        },
+        {
+            "exercise_type": "grounding",
+            "name": "5-4-3-2-1 Grounding",
+            "description": "Sensory grounding technique to stay present and reduce dissociation",
+            "instructions": "Notice: 5 things you see, 4 things you touch, 3 things you hear, 2 things you smell, 1 thing you taste",
+            "category": "anxiety",
+            "estimated_duration": 10,
+            "difficulty_level": "beginner",
+        },
+        {
+            "exercise_type": "body_scan",
+            "name": "Progressive Body Scan",
+            "description": "Mindfulness exercise for body awareness and tension release",
+            "instructions": "Lie down and systematically notice sensations in each body part from toes to head",
+            "category": "stress",
+            "estimated_duration": 15,
+            "difficulty_level": "beginner",
+        },
+        {
+            "exercise_type": "gratitude",
+            "name": "Gratitude Reflection",
+            "description": "Write down things you're grateful for to boost positive mood",
+            "instructions": "Write down 3-5 specific things you're grateful for today, no matter how small",
+            "category": "depression",
+            "estimated_duration": 10,
+            "difficulty_level": "beginner",
+        },
+        {
+            "exercise_type": "journaling",
+            "name": "Emotion Journal",
+            "description": "Write freely about your feelings and experiences",
+            "instructions": "Spend 15-20 minutes writing whatever comes to mind about your emotions",
+            "category": "stress",
+            "estimated_duration": 20,
+            "difficulty_level": "beginner",
+        },
+        {
+            "exercise_type": "cognitive_reframing",
+            "name": "Thought Challenge",
+            "description": "Identify and reframe negative thought patterns using CBT techniques",
+            "instructions": "Write a negative thought, identify evidence for/against it, write a more balanced thought",
+            "category": "depression",
+            "estimated_duration": 15,
+            "difficulty_level": "intermediate",
+        },
+        {
+            "exercise_type": "physical_activity",
+            "name": "Movement Break",
+            "description": "5-10 minute physical activity or stretch to boost mood",
+            "instructions": "Go for a short walk, do yoga, stretch, or any movement that feels good",
+            "category": "depression",
+            "estimated_duration": 10,
+            "difficulty_level": "beginner",
+        },
+        {
+            "exercise_type": "self_compassion",
+            "name": "Self-Compassion Practice",
+            "description": "Speak to yourself with kindness and understanding",
+            "instructions": "Place hand on heart, breathe deeply, repeat: 'This is difficult, I am doing my best'",
+            "category": "shame",
+            "estimated_duration": 5,
+            "difficulty_level": "beginner",
+        },
+    ]
+
+    for template in templates:
+        try:
+            create_exercise_template(**template)
+        except Exception:
+            pass
+
+    _exercise_templates_initialized = True

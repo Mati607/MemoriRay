@@ -1,0 +1,22 @@
+[
+  {
+    "role": "assistant",
+    "content": "Hi mati — I'm here with a calm, supportive ear. How are you feeling right now?"
+  },
+  {
+    "role": "user",
+    "content": "Hi"
+  },
+  {
+    "role": "assistant",
+    "content": "Hi there! Thanks for reaching out. It's good to hear from you.\n\nIs there anything specific on your mind today, or are you just checking in? I'm here to listen if you'd like to share how you're doing."
+  },
+  {
+    "role": "user",
+    "content": "I am just feeling down"
+  },
+  {
+    "role": "assistant",
+    "content": "I'm really sorry to hear that you're feeling down right now. It takes strength to acknowledge those feelings, and I want you to know it's okay to feel that way.\n\nSometimes when we're feeling down, it can be helpful to just acknowledge it without judgment. Would you like to tell me a bit more about what's on your mind, or would you prefer to try a brief exercise to help ease some of those feelings, like a simple breathing technique or a quick grounding exercise? We could also just sit with it for a moment."
+  }
+]
