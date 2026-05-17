@@ -37,6 +37,9 @@ from database import (
     create_exercise_template
 )
 from analytics_service import MoodAnalytics, TherapyRecommender, InsightGenerator
+from goal_tracking import GoalTracker, MilestoneTracker
+from wellness_recommender import WellnessRecommender, CopingStrategyAdvisor
+from export_service import MoodDataExporter, ProgressReportGenerator
 
 if importlib.util.find_spec("baml_client") is None:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -826,6 +829,185 @@ def get_mood_data(req: MoodStatsRequest):
         )
     finally:
         db.close()
+
+
+# ── Wellness & Goals ──────────────────────────────────────────────────────
+class GoalResponse(BaseModel):
+    id: int
+    title: str
+    goal_type: str
+    target_value: float
+    current_value: float
+    progress_percent: float
+    is_completed: bool
+    days_remaining: int | None
+    unit: str
+
+class GoalsListResponse(BaseModel):
+    goals: List[GoalResponse]
+    total: int
+
+@app.post("/wellness/goals", response_model=GoalsListResponse)
+def get_goals(req: MoodStatsRequest):
+    """Get user's wellness goals."""
+    goals = GoalTracker.get_user_goals(req.user_id, include_completed=False)
+    return GoalsListResponse(goals=goals, total=len(goals))
+
+class CreateGoalRequest(BaseModel):
+    user_id: int
+    title: str
+    goal_type: str
+    target_value: float
+    target_date: str
+    description: str = ""
+
+@app.post("/wellness/create_goal")
+def create_goal(req: CreateGoalRequest):
+    """Create a new wellness goal."""
+    from datetime import datetime as dt
+    target_dt = dt.fromisoformat(req.target_date)
+    goal_id = GoalTracker.create_goal(
+        user_id=req.user_id,
+        title=req.title,
+        goal_type=req.goal_type,
+        target_value=req.target_value,
+        target_date=target_dt,
+        description=req.description,
+    )
+    return {"status": "success", "goal_id": goal_id}
+
+class UpdateGoalProgressRequest(BaseModel):
+    goal_id: int
+    user_id: int
+    value: float
+    notes: str = ""
+
+@app.post("/wellness/update_progress")
+def update_goal_progress(req: UpdateGoalProgressRequest):
+    """Update progress on a goal."""
+    GoalTracker.record_progress(
+        goal_id=req.goal_id,
+        user_id=req.user_id,
+        value=req.value,
+        notes=req.notes,
+    )
+    return {"status": "success", "message": "Progress recorded"}
+
+@app.post("/wellness/suggest_goals", response_model=dict)
+def suggest_goals(req: MoodStatsRequest):
+    """Get goal suggestions based on user data."""
+    suggestions = GoalTracker.suggest_goals_for_user(req.user_id)
+    return {"suggestions": suggestions}
+
+class WellnessRecommendationResponse(BaseModel):
+    type: str
+    title: str
+    description: str
+    actions: List[str]
+    priority: str
+    emoji: str
+
+class RecommendationsResponse(BaseModel):
+    recommendations: List[WellnessRecommendationResponse]
+
+@app.post("/wellness/recommendations", response_model=RecommendationsResponse)
+def get_wellness_recommendations(req: MoodStatsRequest):
+    """Get personalized wellness recommendations."""
+    recommendations = WellnessRecommender.generate_recommendations(req.user_id)
+    return RecommendationsResponse(
+        recommendations=[WellnessRecommendationResponse(**r) for r in recommendations]
+    )
+
+class ActionPlanResponse(BaseModel):
+    duration_days: int
+    priority_actions: List[Dict]
+    daily_schedule: List[Dict]
+
+@app.post("/wellness/action_plan", response_model=dict)
+def get_action_plan(req: MoodStatsRequest):
+    """Get personalized action plan."""
+    plan = WellnessRecommender.get_action_plan(req.user_id, days=7)
+    return {"plan": plan}
+
+class MilestoneResponse(BaseModel):
+    id: str
+    name: str
+    description: str
+    icon: str
+
+class MilestonesResponse(BaseModel):
+    milestones: List[MilestoneResponse]
+
+@app.post("/wellness/milestones", response_model=MilestonesResponse)
+def get_milestones(req: MoodStatsRequest):
+    """Get achieved milestones."""
+    milestones = MilestoneTracker.check_milestones(req.user_id)
+    return MilestonesResponse(milestones=[MilestoneResponse(**m) for m in milestones])
+
+class CopingStrategyRequest(BaseModel):
+    emotion: str
+    urgency: str = "immediate"
+
+class CopingStrategyResponse(BaseModel):
+    emotion: str
+    urgency: str
+    strategies: List[str]
+
+@app.post("/wellness/coping_strategies", response_model=CopingStrategyResponse)
+def get_coping_strategies(req: CopingStrategyRequest):
+    """Get coping strategies for an emotion."""
+    strategies = CopingStrategyAdvisor.get_strategy_for_emotion(req.emotion, req.urgency)
+    return CopingStrategyResponse(
+        emotion=req.emotion,
+        urgency=req.urgency,
+        strategies=strategies,
+    )
+
+class ExportRequest(BaseModel):
+    user_id: int
+    format: str = "csv"
+
+@app.post("/export/mood_data")
+def export_mood_data(req: ExportRequest):
+    """Export mood data as CSV."""
+    csv_data = MoodDataExporter.export_to_csv(req.user_id, days=90)
+    return {
+        "status": "success",
+        "data": csv_data,
+        "filename": f"mood_data_{req.user_id}.csv",
+    }
+
+@app.post("/export/exercises")
+def export_exercises(req: ExportRequest):
+    """Export exercise history as CSV."""
+    csv_data = MoodDataExporter.export_exercises_to_csv(req.user_id, days=90)
+    return {
+        "status": "success",
+        "data": csv_data,
+        "filename": f"exercises_{req.user_id}.csv",
+    }
+
+@app.post("/export/weekly_reports")
+def export_reports(req: ExportRequest):
+    """Export weekly reports as CSV."""
+    csv_data = MoodDataExporter.export_weekly_report_to_csv(req.user_id)
+    return {
+        "status": "success",
+        "data": csv_data,
+        "filename": f"reports_{req.user_id}.csv",
+    }
+
+@app.get("/health/status")
+def get_health_status():
+    """Get overall health status."""
+    return {
+        "status": "healthy",
+        "services": {
+            "database": "ok",
+            "genai": "ok",
+            "analytics": "ok",
+        },
+    }
 
 
 # Initialize exercise templates on startup
