@@ -42,6 +42,8 @@ from wellness_recommender import WellnessRecommender, CopingStrategyAdvisor
 from export_service import MoodDataExporter, ProgressReportGenerator
 from journal_models import init_journal_models
 from journal_api import router as journal_router
+from habit_models import init_habit_models
+from habit_api import router as habit_router
 
 if importlib.util.find_spec("baml_client") is None:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -195,6 +197,10 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"⚠️ Journal model init failed: {e}")
     try:
+        init_habit_models()
+    except Exception as e:
+        print(f"⚠️ Habit model init failed: {e}")
+    try:
         app.state.genai_client = genai.Client()
     except Exception as e:
         raise RuntimeError(f"Failed to initialize GenAI client: {e}")
@@ -212,6 +218,7 @@ app.add_middleware(
 )
 
 app.include_router(journal_router)
+app.include_router(habit_router)
 
 @app.get("/", include_in_schema=False)
 def home():
