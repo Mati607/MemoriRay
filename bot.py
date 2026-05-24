@@ -44,6 +44,8 @@ from journal_models import init_journal_models
 from journal_api import router as journal_router
 from habit_models import init_habit_models
 from habit_api import router as habit_router
+from cbt_models import init_cbt_models
+from cbt_api import router as cbt_router
 
 if importlib.util.find_spec("baml_client") is None:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -201,6 +203,10 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"⚠️ Habit model init failed: {e}")
     try:
+        init_cbt_models()
+    except Exception as e:
+        print(f"⚠️ CBT model init failed: {e}")
+    try:
         app.state.genai_client = genai.Client()
     except Exception as e:
         raise RuntimeError(f"Failed to initialize GenAI client: {e}")
@@ -219,6 +225,7 @@ app.add_middleware(
 
 app.include_router(journal_router)
 app.include_router(habit_router)
+app.include_router(cbt_router)
 
 @app.get("/", include_in_schema=False)
 def home():
